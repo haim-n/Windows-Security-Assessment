@@ -1,5 +1,6 @@
-﻿$Version = "0.80"
+﻿$Version = "0.81"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
+# v0.81 update: fixed comments
 ##########################################################
 # TODO:
 ## Create checklist of all controls to check
@@ -7,6 +8,7 @@
 ## Improve session enumeration check - comparison to computers before/after NetCease
 ## Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO
 ## Test the SMB1 registry check
+## Get CredSSP settings
 ## Determine Macro settings
 ## Find misconfigured services which allow elevation of privileges
 ## Test on all Windows versions
