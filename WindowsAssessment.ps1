@@ -1,12 +1,16 @@
-﻿$Version = "0.72"
-# v0.71 update: minor fixes
-# v0.72 update: added TODO
+﻿$Version = "0.80"
+# v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 ##########################################################
 # TODO:
-## Find misconfigured services which allow elevation of privileges
+## Create checklist of all controls to check
+## Consolidate all checks to a single findings output
+## Improve session enumeration check - comparison to computers before/after NetCease
+## Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO
 ## Test the SMB1 registry check
-## Add explanations to output files to help the auditor and allow screenshots from the output (SMB, WDigest, Sensitive Info, RDP, LSA, Cred Guard)
-## Check again on Win2008 + Win2003
+## Determine Macro settings
+## Find misconfigured services which allow elevation of privileges
+## Test on all Windows versions
+## Add explanations to output files to help the auditor (SMB, WDigest, Sensitive Info, RDP, LSA, Cred Guard)
 ## check if Internet sites are accessible (ports 80/443 test, curl/wget, etc.)
 ## Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
 ## Check for Windows Update / WSUS settings
@@ -14,7 +18,7 @@
 ## Get IIS information
 ## Add More settings from hardening docs or PT mitigations
 ## Run the script from remote location to a list of servers - psexec, remote ps, etc.
-## Change script formation to functions
+## Change script structure to functions
 ## Find and filter the actual security issues in the results
 ## Zip files without the need for PowerShell 5.0
 ##########################################################
@@ -25,7 +29,7 @@ $startTime = Get-Date
 write-host Hello dear user! -ForegroundColor Green
 Write-Host This script will output the results to a folder or a zip file with the server name. -ForegroundColor Green
 #check if running as an elevated admin
-$runningAsAdmin = (whoami /all | select-string S-1-16-12288) -ne $null
+$runningAsAdmin = (whoami /groups | select-string S-1-16-12288) -ne $null
 if (!$runningAsAdmin)
     {Write-host "Please run the script as an elevated admin, or else some output will be missing! :-(" -ForegroundColor Red}
 
@@ -43,7 +47,15 @@ New-Item $hostname -type directory | Out-Null
 # get current user privileges
 write-host Running whoami... -ForegroundColor Yellow
 "`nOutput of `"whoami /all`" command:`n" | Out-File $hostname\whoami-all_$hostname.txt -Append
+# when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
+$PrevErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
 whoami /all | Out-File $hostname\whoami-all_$hostname.txt -Append
+$ErrorActionPreference = $PrevErrorActionPreference
+"`n========================================================================================================" | Out-File $hostname\whoami-all_$hostname.txt -Append
+"`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $hostname\whoami-all_$hostname.txt -Append
+"`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $hostname\whoami-all_$hostname.txt -Append
+"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation" | Out-File $hostname\whoami-all_$hostname.txt -Append
 
 # get IP settings
 write-host Running ipconfig... -ForegroundColor Yellow
@@ -74,6 +86,10 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
         gpresult /h $hostname\gpresult_$hostname.html
         # /h doesn't exists on Windows 2003
         if (!(Test-Path $hostname\gpresult_$hostname.html)) {gpresult $hostname\gpresult_$hostname.txt}
+    }
+    else
+    {
+        write-host Unable to get GPO configuration... the computer is not connected to the domain -ForegroundColor Red
     }
 }
 
@@ -145,9 +161,9 @@ write-host Getting services... -ForegroundColor Yellow
 "`nOutput of `"Get-WmiObject win32_service`" PowerShell command:`n" | Out-File $hostname\Services_$hostname.txt -Append
 Get-WmiObject win32_service  | Sort displayname | ft -AutoSize DisplayName, Name, State, StartMode, StartName | Out-String -Width 180 | Out-File $hostname\Services_$hostname.txt -Append
 
-# get installed softwares
-write-host Getting installed softwares... -ForegroundColor Yellow
-Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | sort DisplayName | Out-String -Width 180 | Out-File $hostname\Softwares_$hostname.txt
+# get installed software
+write-host Getting installed software... -ForegroundColor Yellow
+Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | sort DisplayName | Out-String -Width 180 | Out-File $hostname\Software_$hostname.txt
 
 # get shared folders (Share permissions are missing for older PowerShell versions)
 write-host Getting shared folders... -ForegroundColor Yellow
@@ -360,18 +376,31 @@ else
     "`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits" | Out-File $hostname\RDP_$hostname.txt -Append
 }
 
-# getting credential guard settings (for Windows 10 only)
+# getting credential guard settings (for Windows 10/2016 and above only)
 if ($winVersion.Major -ge 10)
 {
     Write-Host Checking credential guard settings... -ForegroundColor Yellow
     $DevGuard = Get-CimInstance –ClassName Win32_DeviceGuard –Namespace root\Microsoft\Windows\DeviceGuard
-    "============= Credential Guard Settings =============" | Out-File $hostname\Credential-Guard_$hostname.txt -Append
+    "============= Credential Guard Settings from WMI =============" | Out-File $hostname\Credential-Guard_$hostname.txt -Append
     if (($DevGuard.SecurityServicesConfigured -contains 1) -and ($DevGuard.SecurityServicesRunning -contains 1))
         {"Credential Guard is configured and running. Which is good." | Out-File $hostname\Credential-Guard_$hostname.txt -Append}
     else
         {"Credential Guard is turned off. A possible finding." | Out-File $hostname\Credential-Guard_$hostname.txt -Append}
-    "`n============= Raw Device Guard Settings (Including Credential Guard) =============" | Out-File $hostname\Credential-Guard_$hostname.txt
+    "`n============= Raw Device Guard Settings from WMI (Including Credential Guard) =============" | Out-File $hostname\Credential-Guard_$hostname.txt -Append
     $DevGuard | Out-File $hostname\Credential-Guard_$hostname.txt -Append
+    $DevGuardPS = Get-ComputerInfo dev*
+    "`n============= Credential Guard Settings from Get-ComputerInfo =============" | Out-File $hostname\Credential-Guard_$hostname.txt -Append
+    if ($DevGuardPS.DeviceGuardSecurityServicesRunning -eq $null)
+        {"Credential Guard is turned off. A possible finding." | Out-File $hostname\Credential-Guard_$hostname.txt -Append}
+    else
+    {
+        if (($DevGuardPS.DeviceGuardSecurityServicesRunning | ? {$_.tostring() -eq "CredentialGuard"}) -ne $null)
+            {"Credential Guard is configured and running. Which is good." | Out-File $hostname\Credential-Guard_$hostname.txt -Append}
+        else
+            {"Credential Guard is turned off. A possible finding." | Out-File $hostname\Credential-Guard_$hostname.txt -Append}
+    }
+    "`n============= Raw Device Guard Settings from Get-ComputerInfo =============" | Out-File $hostname\Credential-Guard_$hostname.txt -Append
+    $DevGuardPS | Out-File $hostname\Credential-Guard_$hostname.txt -Append
 }
 
 # getting LSA protection configuration (for Windows 8.1 and above only)
@@ -385,9 +414,9 @@ if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.
     {
         "RunAsPPL registry value is: " +$RunAsPPL.RunAsPPL | Out-File $hostname\LSA-Protection_$hostname.txt
         if ($RunAsPPL.RunAsPPL -eq 1)
-            {"LSA protection is on . Which is good." | Out-File $hostname\LSA-Protection_$hostname.txt -Append}
+            {"LSA protection is on. Which is good." | Out-File $hostname\LSA-Protection_$hostname.txt -Append}
         else
-            {"LSA protection is off . Which is bad and a possible finding." | Out-File $hostname\LSA-Protection_$hostname.txt -Append}
+            {"LSA protection is off. Which is bad and a possible finding." | Out-File $hostname\LSA-Protection_$hostname.txt -Append}
     }
 }
 
@@ -466,7 +495,7 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
 }
 
 # check if LLMNR and NETBIOS-NS are enabled
-# LLMNR and NETBIOS-NS are insecure legacy protocols for local multicast DNS queries that can be abused by Responder
+# LLMNR and NETBIOS-NS are insecure legacy protocols for local multicast DNS queries that can be abused by Responder/Inveigh
 write-host Getting LLMNR and NETBIOS configuration... -ForegroundColor Yellow
 "============= LLMNR Configuration =============" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
 "`nGPO Setting: Computer Configuration -> Administrative Templates -> Network -> DNS Client -> Enable Turn Off Multicast Name Resolution" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
@@ -474,17 +503,33 @@ $LLMNR = Get-ItemProperty "HKLM:\Software\policies\Microsoft\Windows NT\DNSClien
 $LLMNR_Enabled = $LLMNR.EnableMulticast
 "`nRegistry Setting: `"HKLM:\Software\policies\Microsoft\Windows NT\DNSClient`" -> EnableMulticast = $LLMNR_Enabled" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
 if ($LLMNR_Enabled -eq 0)
-    {"`nLLMNR is disabled, which is good." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}
+    {"`nLLMNR is disabled, which is secure." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}
 else
-    {"`nLLMNR is enabled, which is a possible finding, especially for workstations." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}
-"`n============= NETBIOS Configuration =============" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
-"`nChecking the NETBIOS over TCP/IP configuration for each network interface." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
-"`nNetwork interface properties -> IPv4 properties -> Advanced -> WINS -> NetBIOS setting" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
-"`nNetbiosOptions=0 is default, and usually means enabled, which is bad and a possible finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
-"NetbiosOptions=1 is enabled, which is bad and a possible finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
-"NetbiosOptions=2 is disabled, which is good." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
-$interfaces = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_*" NetbiosOptions
-$interfaces | select PSChildName,NetbiosOptions | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+    {"`nLLMNR is enabled, which is a finding, especially for workstations." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}
+"`n============= NETBIOS Name Service Configuration =============" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+"`nChecking the NETBIOS Node Type configuration - see 'https://getadmx.com/?Category=KB160177#' for details...`n" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+$NodeType = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Services\NetBT\Parameters" NodeType -ErrorAction SilentlyContinue).NodeType
+if ($NodeType -eq 2)
+    {"NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server), which is secure." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}
+else
+{
+    switch ($NodeType)
+    {
+        $null {"NetBIOS Node Type is set to the default setting (broadcast queries), which is not secure and a finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}
+        1 {"NetBIOS Node Type is set to B-node (broadcast queries), which is not secure and a finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}
+        4 {"NetBIOS Node Type is set to M-node (broadcasts first, then queries the WINS name server), which is not secure and a finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}
+        8 {"NetBIOS Node Type is set to H-node (queries the WINS name server first, then broadcasts), which is not secure and a finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append}        
+    }
+
+    "`nChecking the NETBIOS over TCP/IP configuration for each network interface." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+    "`nNetwork interface properties -> IPv4 properties -> Advanced -> WINS -> NetBIOS setting" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+    "`nNetbiosOptions=0 is default, and usually means enabled, which is not secure and a possible finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+    "NetbiosOptions=1 is enabled, which is not secure and a possible finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+    "NetbiosOptions=2 is disabled, which is secure." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+    "If NetbiosOptions is set to 2 for the main interface, NetBIOS Name Service is protected against poisoning attacks even though the NodeType is not set to P-node, and this is not a finding." | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+    $interfaces = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_*" NetbiosOptions -ErrorAction SilentlyContinue
+    $interfaces | select PSChildName,NetbiosOptions | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
+}
 
 # check if cleartext credentials are saved in lsass memory for WDigest
 # turned on by default for Win7/2008/8/2012, to fix it you must install kb2871997 and than fix the registry value below
@@ -507,15 +552,30 @@ if ($WDigest -eq $null)
 }
 else
 {
-    if ($WDigest -eq 0)
+    if ($WDigest.UseLogonCredential -eq 0)
     {"`nWDigest doesn't store cleartext user credentials in memory, which is good." | Out-File $hostname\WDigest_$hostname.txt -Append}
-    if ($WDigest -eq 1)
+    if ($WDigest.UseLogonCredential -eq 1)
     {"`nWDigest stores cleartext user credentials in memory, which is bad and a possible finding." | Out-File $hostname\WDigest_$hostname.txt -Append}
 }
 
-# get various system info (takes a lot of time)
+
+# check for Net Session enumeration permissions
+write-host Getting NetSession configuration... -ForegroundColor Yellow
+"============= NetSession Configuration =============" | Out-File $hostname\NetSession_$hostname.txt
+"`nBy default, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance." | Out-File $hostname\NetSession_$hostname.txt -Append
+"See more details here: https://gallery.technet.microsoft.com/Net-Cease-Blocking-Net-1e8dcb5b" | Out-File $hostname\NetSession_$hostname.txt -Append
+"`nTo get the NetSession permissions for a computer, run: (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo" | Out-File $hostname\NetSession_$hostname.txt -Append
+"`nThe output from hardened and non-hardened computers can be compared to the output from this computer." | Out-File $hostname\NetSession_$hostname.txt -Append
+"`nThe SrvsvcSessionInfo registry value under HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity is set to:" | Out-File $hostname\NetSession_$hostname.txt -Append
+$SessionRegValue = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo
+$SessionRegValue | Out-File $hostname\NetSession_$hostname.txt -Append
+
+# get various system info (can take a few seconds)
 write-host Running systeminfo... -ForegroundColor Yellow
-systeminfo > $hostname\systeminfo_$hostname.txt
+"============= Get-ComputerInfo =============" | Out-File $hostname\systeminfo_$hostname.txt -Append
+Get-ComputerInfo | Out-File $hostname\systeminfo_$hostname.txt -Append
+"`n`n============= systeminfo =============" | Out-File $hostname\systeminfo_$hostname.txt -Append
+systeminfo >> $hostname\systeminfo_$hostname.txt
 
 #########################################################
 
@@ -539,11 +599,11 @@ try
 {
     Compress-Archive -Path $hostname\* -DestinationPath $hostname -Force -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force -Path $hostname -ErrorAction SilentlyContinue
-    Write-Host All Done! Please send the output ZIP file to the auditor. -ForegroundColor Green
+    Write-Host All Done! Please send the output ZIP file. -ForegroundColor Green
 }
 catch
 {
-    Write-Host All Done! Please ZIP all the files and send them to the auditor. -ForegroundColor Green
+    Write-Host All Done! Please ZIP all the files and send it back. -ForegroundColor Green
 }
 
 $endTime = Get-Date
