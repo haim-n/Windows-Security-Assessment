@@ -141,13 +141,13 @@ if ($winVersion.Major -ge 6)
 write-host Checking for installed hotfixes... -ForegroundColor Yellow
 "`nOutput of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" | Out-File $hostname\hotfixes_$hostname.txt -Append
 Get-HotFix | sort InstalledOn -Descending | Out-File $hostname\hotfixes_$hostname.txt -Append
-#wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
-#if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
-#{
-#    write-host "Checking for installed hotfixes again... htable format didn't work" -ForegroundColor Yellow
-#    Remove-Item $hostname\hotfixes_$hostname.html
-#    wmic qfe list > $hostname\hotfixes_$hostname.txt
-#}
+<# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
+if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
+{
+    write-host "Checking for installed hotfixes again... htable format didn't work" -ForegroundColor Yellow
+    Remove-Item $hostname\hotfixes_$hostname.html
+    wmic qfe list > $hostname\hotfixes_$hostname.txt
+} #>
 
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
 write-host Getting processes... -ForegroundColor Yellow
