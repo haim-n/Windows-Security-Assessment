@@ -1,31 +1,63 @@
-﻿$Version = "0.81"
+﻿$Version = "0.82"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
+# v0.82 update: added checklist
 ##########################################################
-# TODO:
-## Create checklist of all controls to check
-## Consolidate all checks to a single findings output
-## Improve session enumeration check - comparison to computers before/after NetCease
-## Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO
-## Test the SMB1 registry check
-## Get CredSSP settings
-## Determine Macro settings
-## Find misconfigured services which allow elevation of privileges
-## Test on all Windows versions
-## Add explanations to output files to help the auditor (SMB, WDigest, Sensitive Info, RDP, LSA, Cred Guard)
-## check if Internet sites are accessible (ports 80/443 test, curl/wget, etc.)
-## Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
-## Check for Windows Update / WSUS settings
-## Check for Device Control (GPO or dedicated software)
-## Get IIS information
-## Add More settings from hardening docs or PT mitigations
-## Run the script from remote location to a list of servers - psexec, remote ps, etc.
-## Change script structure to functions
-## Find and filter the actual security issues in the results
-## Zip files without the need for PowerShell 5.0
+<# TODO:
+- Create checklist of all controls to check
+- Consolidate all checks to a single findings output
+- Improve session enumeration check - comparison to computers before/after NetCease
+- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO
+- Test on all Windows versions
+- Test the SMB1 registry check
+- Check CredSSP settings
+- Check Macro settings
+- Find misconfigured services which allow elevation of privileges
+- Add explanations to output files to help the auditor (SMB, WDigest, Sensitive Info, RDP, LSA, Cred Guard)
+- Check if Internet sites are accessible (ports 80/443 test, curl/wget, etc.)
+- Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
+- Check for Windows Update / WSUS settings
+- Check for Device Control (GPO or dedicated software)
+- Get IIS information
+- Add More settings from hardening docs or PT mitigations
+- Run the script from remote location to a list of servers - psexec, remote ps, etc.
+- Change script structure to functions
+- Find and filter the actual security issues in the results
+- Zip files without the need for PowerShell 5.0
 ##########################################################
-# @Haim Nachmias
+Controls Checklist:
+- OS is up to date (hotfixes file shows recent updates)
+- LSA Protection is enabled (LSA-Protection file)
+- Credential guard is running (Credential-Guard file)
+- SMB Signing is enforced (SMB file)
+- SMB1 Server is not installed (SMB file)
+- NTLMv2 is enforced  (Security-Policy inf file: Network security: LAN Manager authentication level)
+- LLMNR is disabled (LLMNR_and_NETBIOS file)
+- NETBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
+- WDigest is disabled (WDigest file)
+- Net Session permissions are hardened (NetSession file)
+- SAM enumeration permissions are hardened (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM)
+- PowerShell v2 is uninstalled (Windows-Features file: PowerShell-V2)
+- RDP timeout for disconnected sessions is configured (RDP file)
+- RDP NLA is required (RDP file)
+- Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing)
+- Deny network access by local users (Security-Policy inf file: User Rights Assignment - Deny access to this computer from the network)
+- Local administrators group is configured as a restricted group (Security-Policy inf file: Restricted Groups)
+- Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache)
+- UAC is enabled (Security-Policy inf file: User Account Control settings)
+- Antivirus is running and updated (AntiVirus file)
+- Local and domain password policies are sufficient (AccountPolicy file)
+- Audit policy is sufficient (Audit-Policy file)
+- No overly permissive shares exists (Shares file)
+- No clear-text passwords are stored in files (Sensitive-Info file)
+- No prolifilation of unmanaged local users (Local-Users file)
+- Reasonable number or users/groups have local admin permissions (Local-Users file)
+- User Rights Assignment privileges don't allow privilege escalation by non-admins (Security-Policy inf file: User Rights Assignment)
+- Services are not running with overly permissive privileges (Services file)
+- No irrelevant/malicious processes/services/software exists (Services, Process-list, Software, Netstat files)
 ##########################################################
+@Haim Nachmias
+##########################################################>
 
 $startTime = Get-Date
 write-host Hello dear user! -ForegroundColor Green
