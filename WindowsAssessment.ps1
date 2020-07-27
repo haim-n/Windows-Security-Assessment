@@ -1,7 +1,8 @@
-﻿$Version = "0.82"
+﻿$Version = "0.83"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
+# v0.83 update: minor fixes
 ##########################################################
 <# TODO:
 - Improve session enumeration check - comparison to computers before/after NetCease
@@ -48,7 +49,7 @@ Controls Checklist:
 - Audit policy is sufficient (Audit-Policy file)
 - No overly permissive shares exists (Shares file)
 - No clear-text passwords are stored in files (Sensitive-Info file)
-- No prolifilation of unmanaged local users (Local-Users file)
+- No proliferation of unmanaged local users (Local-Users file)
 - Reasonable number or users/groups have local admin permissions (Local-Users file)
 - User Rights Assignment privileges don't allow privilege escalation by non-admins (Security-Policy inf file: User Rights Assignment)
 - Services are not running with overly permissive privileges (Services file)
@@ -59,7 +60,7 @@ Controls Checklist:
 
 $startTime = Get-Date
 write-host Hello dear user! -ForegroundColor Green
-Write-Host This script will output the results to a folder or a zip file with the server name. -ForegroundColor Green
+Write-Host This script will output the results to a folder or a zip file with the computer name. -ForegroundColor Green
 #check if running as an elevated admin
 $runningAsAdmin = (whoami /groups | select-string S-1-16-12288) -ne $null
 if (!$runningAsAdmin)
@@ -528,7 +529,7 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
 
 # check if LLMNR and NETBIOS-NS are enabled
 # LLMNR and NETBIOS-NS are insecure legacy protocols for local multicast DNS queries that can be abused by Responder/Inveigh
-write-host Getting LLMNR and NETBIOS configuration... -ForegroundColor Yellow
+write-host Getting LLMNR and NETBIOS-NS configuration... -ForegroundColor Yellow
 "============= LLMNR Configuration =============" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
 "`nGPO Setting: Computer Configuration -> Administrative Templates -> Network -> DNS Client -> Enable Turn Off Multicast Name Resolution" | Out-File $hostname\LLMNR_and_NETBIOS_$hostname.txt -Append
 $LLMNR = Get-ItemProperty "HKLM:\Software\policies\Microsoft\Windows NT\DNSClient" EnableMulticast -ErrorAction SilentlyContinue
