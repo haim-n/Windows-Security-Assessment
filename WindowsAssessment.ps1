@@ -4,8 +4,6 @@
 # v0.82 update: added checklist
 ##########################################################
 <# TODO:
-- Create checklist of all controls to check
-- Consolidate all checks to a single findings output
 - Improve session enumeration check - comparison to computers before/after NetCease
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO
 - Test on all Windows versions
