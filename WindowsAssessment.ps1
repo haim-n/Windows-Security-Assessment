@@ -1,16 +1,22 @@
-﻿$Version = "0.83"
+﻿$Version = "0.88"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
 # v0.83 update: minor fixes
+# v0.84 update: updated TODO
+# v0.85 update: updated credential delegation - TODO and checklist, updated where admin is needed
+# v0.86 update: updated TODO and checklist on PowerShell logging
+# v0.87 update: added checklist
+# v0.88 update: NetSession updates
 ##########################################################
 <# TODO:
-- Improve session enumeration check - comparison to computers before/after NetCease
+- Check for CredSSP - Allow delegating default credentials (general and NTLM)
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO
+- Determine if PowerShell logging is enabled
 - Test on all Windows versions
 - Test the SMB1 registry check
 - Check CredSSP settings
-- Check Macro settings
+- Check Macro and DDE (OLE) settings
 - Find misconfigured services which allow elevation of privileges
 - Add explanations to output files to help the auditor (SMB, WDigest, Sensitive Info, RDP, LSA, Cred Guard)
 - Check if Internet sites are accessible (ports 80/443 test, curl/wget, etc.)
@@ -30,28 +36,30 @@ Controls Checklist:
 - Credential guard is running (Credential-Guard file)
 - SMB Signing is enforced (SMB file)
 - SMB1 Server is not installed (SMB file)
-- NTLMv2 is enforced  (Security-Policy inf file: Network security: LAN Manager authentication level)
+- NTLMv2 is enforced  (Security-Policy inf file: Network security: LAN Manager authentication level, admin needed)
 - LLMNR is disabled (LLMNR_and_NETBIOS file)
 - NETBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
 - WDigest is disabled (WDigest file)
 - Net Session permissions are hardened (NetSession file)
-- SAM enumeration permissions are hardened (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM)
-- PowerShell v2 is uninstalled (Windows-Features file: PowerShell-V2)
+- SAM enumeration permissions are hardened (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
 - RDP timeout for disconnected sessions is configured (RDP file)
 - RDP NLA is required (RDP file)
-- Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing)
-- Deny network access by local users (Security-Policy inf file: User Rights Assignment - Deny access to this computer from the network)
-- Local administrators group is configured as a restricted group (Security-Policy inf file: Restricted Groups)
-- Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache)
-- UAC is enabled (Security-Policy inf file: User Account Control settings)
+- PowerShell v2 is uninstalled (Windows-Features file: PowerShell-V2, admin needed)
+- PowerShell logging is enabled (gpresult file)
+- Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
+- Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing, admin needed)
+- Credential delegation is disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
+- Deny network access by local users (Security-Policy inf file: User Rights Assignment - Deny access to this computer from the network, admin needed)
+- Local administrators group is configured as a restricted group (Security-Policy inf file: Restricted Groups, admin needed)
+- Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache, admin needed)
+- UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
 - Antivirus is running and updated (AntiVirus file)
 - Local and domain password policies are sufficient (AccountPolicy file)
-- Audit policy is sufficient (Audit-Policy file)
+- Audit policy is sufficient (Audit-Policy file, admin needed)
 - No overly permissive shares exists (Shares file)
 - No clear-text passwords are stored in files (Sensitive-Info file)
-- No proliferation of unmanaged local users (Local-Users file)
 - Reasonable number or users/groups have local admin permissions (Local-Users file)
-- User Rights Assignment privileges don't allow privilege escalation by non-admins (Security-Policy inf file: User Rights Assignment)
+- User Rights Assignment privileges don't allow privilege escalation by non-admins (Security-Policy inf file: User Rights Assignment, admin needed)
 - Services are not running with overly permissive privileges (Services file)
 - No irrelevant/malicious processes/services/software exists (Services, Process-list, Software, Netstat files)
 ##########################################################
@@ -595,10 +603,14 @@ else
 # check for Net Session enumeration permissions
 write-host Getting NetSession configuration... -ForegroundColor Yellow
 "============= NetSession Configuration =============" | Out-File $hostname\NetSession_$hostname.txt
-"`nBy default, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance." | Out-File $hostname\NetSession_$hostname.txt -Append
-"See more details here: https://gallery.technet.microsoft.com/Net-Cease-Blocking-Net-1e8dcb5b" | Out-File $hostname\NetSession_$hostname.txt -Append
-"`nTo get the NetSession permissions for a computer, run: (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo" | Out-File $hostname\NetSession_$hostname.txt -Append
-"`nThe output from hardened and non-hardened computers can be compared to the output from this computer." | Out-File $hostname\NetSession_$hostname.txt -Append
+"`nBy default, on Windows 2016 (and below) and old builds of Windows 10, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance." | Out-File $hostname\NetSession_$hostname.txt -Append
+"`nSee more details here:" | Out-File $hostname\NetSession_$hostname.txt -Append
+"https://gallery.technet.microsoft.com/Net-Cease-Blocking-Net-1e8dcb5b" | Out-File $hostname\NetSession_$hostname.txt -Append
+"https://www.powershellgallery.com/packages/NetCease/1.0.3" | Out-File $hostname\NetSession_$hostname.txt -Append
+"`nFor comparison, below are the beggining of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:" | Out-File $hostname\NetSession_$hostname.txt -Append
+"Default value for Windows 2019 and newer builds of Windows 10 (hardened): 1,0,4,128,160,0,0,0,172" | Out-File $hostname\NetSession_$hostname.txt -Append
+"Default value for Windows 2016, older builds of Windows 10 and older OS versions (not secure - finding): 1,0,4,128,120,0,0,0,132" | Out-File $hostname\NetSession_$hostname.txt -Append
+"Value after running NetCease (hardened): 1,0,4,128,20,0,0,0,32" | Out-File $hostname\NetSession_$hostname.txt -Append
 "`nThe SrvsvcSessionInfo registry value under HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity is set to:" | Out-File $hostname\NetSession_$hostname.txt -Append
 $SessionRegValue = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo
 $SessionRegValue | Out-File $hostname\NetSession_$hostname.txt -Append
