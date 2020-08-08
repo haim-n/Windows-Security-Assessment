@@ -1,4 +1,4 @@
-﻿$Version = "0.88"
+﻿$Version = "0.90"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
@@ -8,17 +8,20 @@
 # v0.86 update: updated TODO and checklist on PowerShell logging
 # v0.87 update: added checklist
 # v0.88 update: NetSession updates
+# v0.89 update: Updated checklist regarding Kerberos algorithms
+# v0.90 update: Windows Defender assessment, SAM enumeration restriction
 ##########################################################
 <# TODO:
-- Check for CredSSP - Allow delegating default credentials (general and NTLM)
-- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO
-- Determine if PowerShell logging is enabled
+- Change methodology for outputting to file - always output to $outputfilename
+- Debug RDP settings assessment
+- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
+- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
+- Determine if PowerShell logging is enabled (based on registry)
 - Test on all Windows versions
 - Test the SMB1 registry check
-- Check CredSSP settings
+- Debug the FirewallProducts check
 - Check Macro and DDE (OLE) settings
 - Find misconfigured services which allow elevation of privileges
-- Add explanations to output files to help the auditor (SMB, WDigest, Sensitive Info, RDP, LSA, Cred Guard)
 - Check if Internet sites are accessible (ports 80/443 test, curl/wget, etc.)
 - Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
 - Check for Windows Update / WSUS settings
@@ -41,19 +44,20 @@ Controls Checklist:
 - NETBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
 - WDigest is disabled (WDigest file)
 - Net Session permissions are hardened (NetSession file)
-- SAM enumeration permissions are hardened (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
+- SAM enumeration permissions are hardened (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - RDP timeout for disconnected sessions is configured (RDP file)
 - RDP NLA is required (RDP file)
 - PowerShell v2 is uninstalled (Windows-Features file: PowerShell-V2, admin needed)
 - PowerShell logging is enabled (gpresult file)
+- Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
 - Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing, admin needed)
-- Credential delegation is disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
+- Credential delegation is not configured or disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
 - Deny network access by local users (Security-Policy inf file: User Rights Assignment - Deny access to this computer from the network, admin needed)
 - Local administrators group is configured as a restricted group (Security-Policy inf file: Restricted Groups, admin needed)
 - Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache, admin needed)
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
-- Antivirus is running and updated (AntiVirus file)
+- Antivirus is running and updated, advanced Windows Defender features are utilized (AntiVirus file)
 - Local and domain password policies are sufficient (AccountPolicy file)
 - Audit policy is sufficient (Audit-Policy file, admin needed)
 - No overly permissive shares exists (Shares file)
@@ -87,16 +91,16 @@ New-Item $hostname -type directory | Out-Null
 
 # get current user privileges
 write-host Running whoami... -ForegroundColor Yellow
-"`nOutput of `"whoami /all`" command:`n" | Out-File $hostname\whoami-all_$hostname.txt -Append
+"`nOutput of `"whoami /all`" command:`n" | Out-File $hostname\Whoami-all_$hostname.txt -Append
 # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
 $PrevErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
-whoami /all | Out-File $hostname\whoami-all_$hostname.txt -Append
+whoami /all | Out-File $hostname\Whoami-all_$hostname.txt -Append
 $ErrorActionPreference = $PrevErrorActionPreference
-"`n========================================================================================================" | Out-File $hostname\whoami-all_$hostname.txt -Append
-"`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $hostname\whoami-all_$hostname.txt -Append
-"`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $hostname\whoami-all_$hostname.txt -Append
-"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation" | Out-File $hostname\whoami-all_$hostname.txt -Append
+"`n========================================================================================================" | Out-File $hostname\Whoami-all_$hostname.txt -Append
+"`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $hostname\Whoami-all_$hostname.txt -Append
+"`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $hostname\Whoami-all_$hostname.txt -Append
+"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation" | Out-File $hostname\Whoami-all_$hostname.txt -Append
 
 # get IP settings
 write-host Running ipconfig... -ForegroundColor Yellow
@@ -180,8 +184,8 @@ if ($winVersion.Major -ge 6)
 
 # get installed hotfixes (/format:htable doesn't always work)
 write-host Checking for installed hotfixes... -ForegroundColor Yellow
-"`nOutput of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" | Out-File $hostname\hotfixes_$hostname.txt -Append
-Get-HotFix | sort InstalledOn -Descending | Out-File $hostname\hotfixes_$hostname.txt -Append
+"`nOutput of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" | Out-File $hostname\Hotfixes_$hostname.txt -Append
+Get-HotFix | sort InstalledOn -Descending | Out-File $hostname\Hotfixes_$hostname.txt -Append
 <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
 if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
 {
@@ -290,12 +294,12 @@ catch
 	
 # get network connections (run-as admin is required for -b associated application switch)
 write-host Running netstat... -ForegroundColor Yellow
-"`n============= netstat -nao =============" | Out-File $hostname\netstat_$hostname.txt -Append
-netstat -nao | Out-File $hostname\netstat_$hostname.txt -Append
-"`n============= netstat -naob (includes process name, elevated admin permission is required =============" | Out-File $hostname\netstat_$hostname.txt -Append
-netstat -naob | Out-File $hostname\netstat_$hostname.txt -Append
-# "============= netstat -ao  =============" | Out-File $hostname\netstat_$hostname.txt  -Append
-# netstat -ao | Out-File $hostname\netstat_$hostname.txt -Append  # shows server names, but takes a lot of time and not very important
+"`n============= netstat -nao =============" | Out-File $hostname\Netstat_$hostname.txt -Append
+netstat -nao | Out-File $hostname\Netstat_$hostname.txt -Append
+"`n============= netstat -naob (includes process name, elevated admin permission is required =============" | Out-File $hostname\Netstat_$hostname.txt -Append
+netstat -naob | Out-File $hostname\Netstat_$hostname.txt -Append
+# "============= netstat -ao  =============" | Out-File $hostname\Netstat_$hostname.txt  -Append
+# netstat -ao | Out-File $hostname\Netstat_$hostname.txt -Append  # shows server names, but takes a lot of time and not very important
 
 # check SMB protocol hardening
 Write-Host Checking SMB hardening... -ForegroundColor Yellow
@@ -510,8 +514,7 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
         {"No Anti Virus products were found." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
     "`n============= Anti-Virus Products Status =============" | Out-File $hostname\AntiVirus_$hostname.txt -Append
     foreach ($av in $AntiVirusProducts)
-    {
-    
+    {    
         "`nProduct Display name: " + $av.displayname | Out-File $hostname\AntiVirus_$hostname.txt -Append
         "Product Executable: " + $av.pathToSignedProductExe | Out-File $hostname\AntiVirus_$hostname.txt -Append
         "Time Stamp: " + $av.timestamp | Out-File $hostname\AntiVirus_$hostname.txt -Append
@@ -533,6 +536,24 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
     $FirewallProducts | Out-File $hostname\AntiVirus_$hostname.txt -Append
     "`n============= Anti-Spyware Products Status (Raw Data) =============" | Out-File $hostname\AntiVirus_$hostname.txt -Append
     $AntiSpywareProducts | Out-File $hostname\AntiVirus_$hostname.txt -Append
+    # check Windows Defender settings
+    "`n============= Windows Defender Settings Status =============" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+    $WinDefenderSettings = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager"
+    switch ($WinDefenderSettings.AllowRealtimeMonitoring)
+    {
+        $null {"AllowRealtimeMonitoring registry value was not found." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
+        0 {"Windows Defender Real Time Monitoring is off." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
+        1 {"Windows Defender Real Time Monitoring is on." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
+    }
+    switch ($WinDefenderSettings.EnableNetworkProtection)
+    {
+        $null {"EnableNetworkProtection registry value was not found." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
+        0 {"Windows Defender Network Protection is off." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
+        1 {"Windows Defender Network Protection is on." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
+        2 {"Windows Defender Network Protection is set to audit mode." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
+    }
+    "`nBelow are all the values under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager:" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     $WinDefenderSettings | Out-File $hostname\AntiVirus_$hostname.txt -Append
 }
 
 # check if LLMNR and NETBIOS-NS are enabled
@@ -603,10 +624,12 @@ else
 # check for Net Session enumeration permissions
 write-host Getting NetSession configuration... -ForegroundColor Yellow
 "============= NetSession Configuration =============" | Out-File $hostname\NetSession_$hostname.txt
-"`nBy default, on Windows 2016 (and below) and old builds of Windows 10, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance." | Out-File $hostname\NetSession_$hostname.txt -Append
+"`nBy default, on Windows 2016 (and below) and old builds of Windows 10, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $hostname\NetSession_$hostname.txt -Append
 "`nSee more details here:" | Out-File $hostname\NetSession_$hostname.txt -Append
 "https://gallery.technet.microsoft.com/Net-Cease-Blocking-Net-1e8dcb5b" | Out-File $hostname\NetSession_$hostname.txt -Append
 "https://www.powershellgallery.com/packages/NetCease/1.0.3" | Out-File $hostname\NetSession_$hostname.txt -Append
+"`nDedicated script for parsing the current permissions can be found here:" | Out-File $hostname\NetSession_$hostname.txt -Append
+"https://gallery.technet.microsoft.com/scriptcenter/View-Net-Session-Enum-dfced139" | Out-File $hostname\NetSession_$hostname.txt -Append
 "`nFor comparison, below are the beggining of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:" | Out-File $hostname\NetSession_$hostname.txt -Append
 "Default value for Windows 2019 and newer builds of Windows 10 (hardened): 1,0,4,128,160,0,0,0,172" | Out-File $hostname\NetSession_$hostname.txt -Append
 "Default value for Windows 2016, older builds of Windows 10 and older OS versions (not secure - finding): 1,0,4,128,120,0,0,0,132" | Out-File $hostname\NetSession_$hostname.txt -Append
@@ -615,12 +638,42 @@ write-host Getting NetSession configuration... -ForegroundColor Yellow
 $SessionRegValue = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo
 $SessionRegValue | Out-File $hostname\NetSession_$hostname.txt -Append
 
+# check for SAM enumeration permissions
+write-host Getting SAM enumeration configuration... -ForegroundColor Yellow
+"============= NetSession Configuration =============" | Out-File $hostname\SAM_Enumeration_$hostname.txt
+"`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+"However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+"These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+"The newer OS versions are also recommended to be configured with the policy, , though it is not essential." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+"`nSee more details here:" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+"https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-access-restrict-clients-allowed-to-make-remote-sam-calls" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+"https://blog.stealthbits.com/making-internal-reconnaissance-harder-using-netcease-and-samri1o" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+"`n----------------------------------------------------" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+
+$RestrictRemoteSAM = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa RestrictRemoteSAM -ErrorAction SilentlyContinue
+if ($RestrictRemoteSAM -eq $null)
+{
+    "`nThe 'RestrictRemoteSAM' registry value was not found. SAM enumeration permissions are configured as the default for the OS version, which is $winVersion." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+    if (($winVersion.Major -ge 10) -and ($winVersion.Build -ge 14393))
+        {"This OS version is hardened by default." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append}
+    else
+        {"This OS version is non hardened by default and this issue can be seen as a finding." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append}
+}
+else
+{
+    $RestrictRemoteSAMValue = $RestrictRemoteSAM.RestrictRemoteSAM
+    "`nThe 'RestrictRemoteSAM' registry value is set to: $RestrictRemoteSAMValue" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+    $RestrictRemoteSAMPermissions = ConvertFrom-SDDLString -Sddl $RestrictRemoteSAMValue
+    "`nBelow are the permissions for SAM enumeration. Make sure that only Administrators are granted Read permissions." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+    $RestrictRemoteSAMPermissions | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+}
+
 # get various system info (can take a few seconds)
 write-host Running systeminfo... -ForegroundColor Yellow
-"============= Get-ComputerInfo =============" | Out-File $hostname\systeminfo_$hostname.txt -Append
-Get-ComputerInfo | Out-File $hostname\systeminfo_$hostname.txt -Append
-"`n`n============= systeminfo =============" | Out-File $hostname\systeminfo_$hostname.txt -Append
-systeminfo >> $hostname\systeminfo_$hostname.txt
+"============= Get-ComputerInfo =============" | Out-File $hostname\Systeminfo_$hostname.txt -Append
+Get-ComputerInfo | Out-File $hostname\Systeminfo_$hostname.txt -Append
+"`n`n============= systeminfo =============" | Out-File $hostname\Systeminfo_$hostname.txt -Append
+systeminfo >> $hostname\Systeminfo_$hostname.txt
 
 #########################################################
 
