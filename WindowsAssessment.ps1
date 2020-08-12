@@ -1,4 +1,4 @@
-﻿$Version = "0.90"
+﻿$Version = "0.91"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
@@ -10,6 +10,7 @@
 # v0.88 update: NetSession updates
 # v0.89 update: Updated checklist regarding Kerberos algorithms
 # v0.90 update: Windows Defender assessment, SAM enumeration restriction
+# v0.91 update: added build version to hotfix output
 ##########################################################
 <# TODO:
 - Change methodology for outputting to file - always output to $outputfilename
@@ -184,6 +185,10 @@ if ($winVersion.Major -ge 6)
 
 # get installed hotfixes (/format:htable doesn't always work)
 write-host Checking for installed hotfixes... -ForegroundColor Yellow
+"`nThe OS version is: " + [System.Environment]::OSVersion + ". See if this version is supported according to the following pages:" | Out-File $hostname\Hotfixes_$hostname.txt -Append
+"https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" | Out-File $hostname\Hotfixes_$hostname.txt -Append
+"https://en.wikipedia.org/wiki/Windows_10_version_history" | Out-File $hostname\Hotfixes_$hostname.txt -Append
+"https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" | Out-File $hostname\Hotfixes_$hostname.txt -Append
 "`nOutput of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" | Out-File $hostname\Hotfixes_$hostname.txt -Append
 Get-HotFix | sort InstalledOn -Descending | Out-File $hostname\Hotfixes_$hostname.txt -Append
 <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
