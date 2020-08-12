@@ -1,4 +1,6 @@
-﻿$Version = "0.91"
+﻿param ([Switch]$EnableSensitiveInfoSearch = $false)
+
+$Version = "0.91"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
@@ -10,7 +12,7 @@
 # v0.88 update: NetSession updates
 # v0.89 update: Updated checklist regarding Kerberos algorithms
 # v0.90 update: Windows Defender assessment, SAM enumeration restriction
-# v0.91 update: added build version to hotfix output
+# v0.91 update: added build version to hotfix output, added flag for sensitive info search (no enabled by default)
 ##########################################################
 <# TODO:
 - Change methodology for outputting to file - always output to $outputfilename
@@ -62,7 +64,7 @@ Controls Checklist:
 - Local and domain password policies are sufficient (AccountPolicy file)
 - Audit policy is sufficient (Audit-Policy file, admin needed)
 - No overly permissive shares exists (Shares file)
-- No clear-text passwords are stored in files (Sensitive-Info file)
+- No clear-text passwords are stored in files (Sensitive-Info file - if the EnableSensitiveInfoSearch was set)
 - Reasonable number or users/groups have local admin permissions (Local-Users file)
 - User Rights Assignment privileges don't allow privilege escalation by non-admins (Security-Policy inf file: User Rights Assignment, admin needed)
 - Services are not running with overly permissive privileges (Services file)
@@ -470,29 +472,32 @@ if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.
     }
 }
 
-# search for sensitive information (i.e. cleartext passwords)
-write-host Searching for sensitive information... -ForegroundColor Yellow
-"============= Looking for clear-text passwords =============" | Out-File $hostname\Sensitive-Info_$hostname.txt -Append
-# recursive searches in c:\temp, current user desktop, default IIS website root folder
-# add any other directory that you want. searching in C:\ may take a while.
-$paths = "C:\Temp",[Environment]::GetFolderPath("Desktop"),"c:\Inetpub\wwwroot"
-foreach ($path in $paths)
+# search for sensitive information (i.e. cleartext passwords) if the flag exists
+if ($EnableSensitiveInfoSearch)
 {
-    "`n============= recursive search in $path =============" | Out-File $hostname\Sensitive-Info_$hostname.txt -Append
-    # find txt\ini\config\xml\vnc files with the word password in it, and dump the line
-    # ignore the files outputted during the assessment...
-    $includeFileTypes = @("*.txt","*.ini","*.config","*.xml","*vnc*")
-    Get-ChildItem -Path $path -Include $includeFileTypes -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | ? {$_.Name -notlike "*_$hostname.txt"} | Select-String -Pattern password | Out-File $hostname\Sensitive-Info_$hostname.txt -Append
-    # find files with the name pass\cred\config\vnc\p12\pfx and dump the whole file, unless it is too big
-    # ignore the files outputted during the assessment...
-    $includeFilePatterns = @("*pass*","*cred*","*config","*vnc*","*p12","*pfx")
-    $files = Get-ChildItem -Path $path -Include $includeFilePatterns -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | ? {$_.Name -notlike "*_$hostname.txt"}
-    foreach ($file in $files)
+    write-host Searching for sensitive information... -ForegroundColor Yellow
+    "============= Looking for clear-text passwords =============" | Out-File $hostname\Sensitive-Info_$hostname.txt -Append
+    # recursive searches in c:\temp, current user desktop, default IIS website root folder
+    # add any other directory that you want. searching in C:\ may take a while.
+    $paths = "C:\Temp",[Environment]::GetFolderPath("Desktop"),"c:\Inetpub\wwwroot"
+    foreach ($path in $paths)
     {
-        "------------- $file -------------" | Out-File $hostname\Sensitive-Info_$hostname.txt -Append
-        $fileSize = (Get-Item $file.FullName).Length
-        if ($fileSize -gt 300kb) {"The file is too large to copy (" + [math]::Round($filesize/(1mb),2) + " MB)." | Out-File $hostname\Sensitive-Info_$hostname.txt -Append}
-        else {cat $file.FullName | Out-File $hostname\Sensitive-Info_$hostname.txt -Append}
+        "`n============= recursive search in $path =============" | Out-File $hostname\Sensitive-Info_$hostname.txt -Append
+        # find txt\ini\config\xml\vnc files with the word password in it, and dump the line
+        # ignore the files outputted during the assessment...
+        $includeFileTypes = @("*.txt","*.ini","*.config","*.xml","*vnc*")
+        Get-ChildItem -Path $path -Include $includeFileTypes -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | ? {$_.Name -notlike "*_$hostname.txt"} | Select-String -Pattern password | Out-File $hostname\Sensitive-Info_$hostname.txt -Append
+        # find files with the name pass\cred\config\vnc\p12\pfx and dump the whole file, unless it is too big
+        # ignore the files outputted during the assessment...
+        $includeFilePatterns = @("*pass*","*cred*","*config","*vnc*","*p12","*pfx")
+        $files = Get-ChildItem -Path $path -Include $includeFilePatterns -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | ? {$_.Name -notlike "*_$hostname.txt"}
+        foreach ($file in $files)
+        {
+            "------------- $file -------------" | Out-File $hostname\Sensitive-Info_$hostname.txt -Append
+            $fileSize = (Get-Item $file.FullName).Length
+            if ($fileSize -gt 300kb) {"The file is too large to copy (" + [math]::Round($filesize/(1mb),2) + " MB)." | Out-File $hostname\Sensitive-Info_$hostname.txt -Append}
+            else {cat $file.FullName | Out-File $hostname\Sensitive-Info_$hostname.txt -Append}
+        }
     }
 }
 
