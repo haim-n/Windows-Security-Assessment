@@ -12,7 +12,7 @@ $Version = "0.91"
 # v0.88 update: NetSession updates
 # v0.89 update: Updated checklist regarding Kerberos algorithms
 # v0.90 update: Windows Defender assessment, SAM enumeration restriction
-# v0.91 update: added build version to hotfix output, added flag for sensitive info search (no enabled by default)
+# v0.91 update: added build version to hotfix output, added flag for sensitive info search (disabled by default)
 ##########################################################
 <# TODO:
 - Change methodology for outputting to file - always output to $outputfilename
