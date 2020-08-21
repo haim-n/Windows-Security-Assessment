@@ -1,6 +1,6 @@
-﻿param ([Switch]$EnableSensitiveInfoSearch = $false)
+﻿param ([Switch]$EnableSensitiveInfoSearch = $false) # add the flag to search for sensitive data
 
-$Version = "0.91"
+$Version = "0.95"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
@@ -13,14 +13,19 @@ $Version = "0.91"
 # v0.89 update: Updated checklist regarding Kerberos algorithms
 # v0.90 update: Windows Defender assessment, SAM enumeration restriction
 # v0.91 update: added build version to hotfix output, added flag for sensitive info search (disabled by default)
+# v0.92 update: updated TODO
+# v0.93 update: updated TODO
+# v0.94 update: not fetching the local users when running on a domain contoller, not running Get-ComputerInfo on old PS
+# v0.95 update: PowerShellv2 check, Windows features check updates
 ##########################################################
 <# TODO:
-- Change methodology for outputting to file - always output to $outputfilename
-- Debug RDP settings assessment
+- Log the time of each operation to the log file (create a function for it and reuse)
+- Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
 - Determine if PowerShell logging is enabled (based on registry)
 - Test on all Windows versions
+- determine if PowerShell 2 exists by running powershell -version 2 -command xxx
 - Test the SMB1 registry check
 - Debug the FirewallProducts check
 - Check Macro and DDE (OLE) settings
@@ -50,7 +55,7 @@ Controls Checklist:
 - SAM enumeration permissions are hardened (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - RDP timeout for disconnected sessions is configured (RDP file)
 - RDP NLA is required (RDP file)
-- PowerShell v2 is uninstalled (Windows-Features file: PowerShell-V2, admin needed)
+- PowerShell v2 is uninstalled (PowerShellv2 file, and/or Windows-Features file: PowerShell-V2 feature)
 - PowerShell logging is enabled (gpresult file)
 - Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
@@ -89,6 +94,23 @@ $winVersion = [System.Environment]::OSVersion.Version
 # remove old folder and create new one
 Remove-Item $hostname -Recurse -ErrorAction SilentlyContinue
 New-Item $hostname -type directory | Out-Null
+
+# output log
+"Script Version: $Version" | Out-File $hostname\Log_$hostname.txt
+"Computer Name: $hostname" | Out-File $hostname\Log_$hostname.txt -Append
+"Running As Admin: $runningAsAdmin" | Out-File $hostname\Log_$hostname.txt -Append
+$user = whoami
+"Running User: $user" | Out-File $hostname\Log_$hostname.txt -Append
+"Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption | Out-File $hostname\Log_$hostname.txt -Append
+$uptimeDate = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject Win32_OperatingSystem).LastBootUpTime)
+"System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
+"Part of Domain: " + (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain | Out-File $hostname\Log_$hostname.txt -Append
+if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
+    {"Domain Controller: True" | Out-File $hostname\Log_$hostname.txt -Append}
+else
+    {"Domain Controller: False" | Out-File $hostname\Log_$hostname.txt -Append}
+
+"`nStart Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
 
 #########################################################
 
@@ -153,19 +175,37 @@ else
     write-host Unable to get security policy settings... elevated admin permissions are required -ForegroundColor Red
 }
 
-# get windows features (Windows vista/2008 & run-as admin are required)
+# get windows features (Windows vista/2008 or above is required)
 if ($winVersion.Major -ge 6)
-{
+{    
+
+    write-host Checking windows features... -ForegroundColor Yellow
+    "There are several ways of getting the Windows features. Some require elevation. See the following for details: https://hahndorf.eu/blog/WindowsFeatureViaCmd" | Out-File $hostname\Windows-Features_$hostname.txt -Append
+    # get features with Get-WindowsOptionalFeature. Requires Windows 8/2012 or above and run-as-admin
+    if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)) # version should be 7+ or 6.2+
+    {
+        "`n============= Output of: Get-WindowsOptionalFeature -Online =============" | Out-File $hostname\Windows-Features_$hostname.txt -Append
+        if ($runningAsAdmin)
+            {Get-WindowsOptionalFeature -Online | sort FeatureName | ft | Out-File $hostname\Windows-Features_$hostname.txt -Append}
+        else
+            {"Unable to run Get-WindowsOptionalFeature without running as admin. Consider running again with elevated admin permissions." | Out-File $hostname\Windows-Features_$hostname.txt -Append}
+    }
+    # get features with dism. Requires run-as-admin
+    "`n============= Output of: dism /online /get-features /format:table | ft =============" | Out-File $hostname\Windows-Features_$hostname.txt -Append
     if ($runningAsAdmin)
     {
-        write-host Checking windows features... -ForegroundColor Yellow
-        "`nOutput of `"dism /online /get-features /format:table`" command:`n" | Out-File $hostname\Windows-Features_$hostname.txt -Append
         dism /online /get-features /format:table | Out-File $hostname\Windows-Features_$hostname.txt -Append
     }
     else
+        {"Unable to run dism without running as admin. Consider running again with elevated admin permissions." | Out-File $hostname\Windows-Features_$hostname.txt -Append}
+    # get features with Get-WindowsFeature. Requires Windows SERVER 2008R2 or above
+    if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 1)) # version should be 7+ or 6.1+
     {
-        write-host Unable to get windows features... elevated admin permissions are required -ForegroundColor Red
-        "Unable to get windows features without running as admin. Consider running again with elevated admin permissions." | Out-File $hostname\Windows-Features_$hostname.txt -Append
+        if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3))
+        {
+            "`n============= Output of: Get-WindowsFeature =============" | Out-File $hostname\Windows-Features_$hostname.txt -Append
+            Get-WindowsFeature | ft -AutoSize | Out-File $hostname\Windows-Features_$hostname.txt -Append
+        }
     }
 }
 
@@ -281,22 +321,26 @@ else
     {"Error: The computer is not part of a domain." | Out-File $hostname\AccountPolicy_$hostname.txt -Append}
 
 # get local users + admins
-write-host Getting local users + administrators... -ForegroundColor Yellow
-"============= Local Administrators =============" | Out-File $hostname\Local-Users_$hostname.txt -Append
-"`nOutput of `"NET LOCALGROUP administrators`" command:`n" | Out-File $hostname\Local-Users_$hostname.txt -Append
-NET LOCALGROUP administrators | Out-File $hostname\Local-Users_$hostname.txt -Append
-"`n============= Local Users =============" | Out-File $hostname\Local-Users_$hostname.txt -Append
-# Get-LocalUser exists only in Windows 10 / 2016
-try
+# only run if no running on a domain controller
+if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2)
 {
-    "`nOutput of `"Get-LocalUser`" PowerShell command:`n" | Out-File $hostname\Local-Users_$hostname.txt -Append
-    Get-LocalUser | ft name, enabled, AccountExpires, PasswordExpires, PasswordRequired, PasswordLastSet, LastLogon, description, SID | Out-String -Width 180 | Out-File $hostname\Local-Users_$hostname.txt -Append
-}
-catch
-{
-    "`nGetting information regarding local users from WMI.`n" | Out-File $hostname\Local-Users_$hostname.txt -Append
-    "Output of `"Get-CimInstance win32_useraccount -Namespace `"root\cimv2`" -Filter `"LocalAccount=`'$True`'`"`" PowerShell command:`n" | Out-File $hostname\Local-Users_$hostname.txt -Append
-    Get-CimInstance win32_useraccount -Namespace "root\cimv2" -Filter "LocalAccount='$True'" | Select Caption,Disabled,Lockout,PasswordExpires,PasswordRequired,Description,SID | format-table -autosize | Out-String -Width 180 | Out-File $hostname\Local-Users_$hostname.txt -Append
+    write-host Getting local users + administrators... -ForegroundColor Yellow
+    "============= Local Administrators =============" | Out-File $hostname\Local-Users_$hostname.txt -Append
+    "`nOutput of `"NET LOCALGROUP administrators`" command:`n" | Out-File $hostname\Local-Users_$hostname.txt -Append
+    NET LOCALGROUP administrators | Out-File $hostname\Local-Users_$hostname.txt -Append
+    "`n============= Local Users =============" | Out-File $hostname\Local-Users_$hostname.txt -Append
+    # Get-LocalUser exists only in Windows 10 / 2016
+    try
+    {
+        "`nOutput of `"Get-LocalUser`" PowerShell command:`n" | Out-File $hostname\Local-Users_$hostname.txt -Append
+        Get-LocalUser | ft name, enabled, AccountExpires, PasswordExpires, PasswordRequired, PasswordLastSet, LastLogon, description, SID | Out-String -Width 180 | Out-File $hostname\Local-Users_$hostname.txt -Append
+    }
+    catch
+    {
+        "`nGetting information regarding local users from WMI.`n" | Out-File $hostname\Local-Users_$hostname.txt -Append
+        "Output of `"Get-CimInstance win32_useraccount -Namespace `"root\cimv2`" -Filter `"LocalAccount=`'$True`'`"`" PowerShell command:`n" | Out-File $hostname\Local-Users_$hostname.txt -Append
+        Get-CimInstance win32_useraccount -Namespace "root\cimv2" -Filter "LocalAccount='$True'" | Select Caption,Disabled,Lockout,PasswordExpires,PasswordRequired,Description,SID | format-table -autosize | Out-String -Width 180 | Out-File $hostname\Local-Users_$hostname.txt -Append
+    }
 }
 	
 # get network connections (run-as admin is required for -b associated application switch)
@@ -422,7 +466,7 @@ else
     $RDPTimeout | Out-File $hostname\RDP_$hostname.txt -Append
     "`nMaxConnectionTime = Time limit for active RDP sessions" | Out-File $hostname\RDP_$hostname.txt -Append
     "MaxIdleTime = Time limit for active but idle RDP sessions" | Out-File $hostname\RDP_$hostname.txt -Append
-    "MaxConnectionTime = Time limit for disconnected RDP sessions" | Out-File $hostname\RDP_$hostname.txt -Append
+    "MaxDisconnectionTime = Time limit for disconnected RDP sessions" | Out-File $hostname\RDP_$hostname.txt -Append
     "fResetBroken = Log off session (instead of disconnect) when time limits are reached" | Out-File $hostname\RDP_$hostname.txt -Append
     "60000 = 1 minute, 3600000 = 1 hour, etc." | Out-File $hostname\RDP_$hostname.txt -Append
     "`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits" | Out-File $hostname\RDP_$hostname.txt -Append
@@ -678,29 +722,66 @@ else
     $RestrictRemoteSAMPermissions | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
 }
 
+
+# check for PowerShell v2 installation, which lacks security features (logging, AMSI)
+write-host Getting PowerShell versions... -ForegroundColor Yellow
+"PowerShell 1/2 are legacy versions which don't support logging and AMSI." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+"It's recommended to uninstall legacy PowerShell versions and make sure that only PowerShell 5+ is installed." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+"See the following article for details on PowerShell downgrade attacks: https://www.leeholmes.com/blog/2017/03/17/detecting-and-preventing-powershell-downgrade-attacks" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+
+"`nThis script is running on PowerShell version " + $PSVersionTable.PSVersion.ToString() | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+# use Get-WindowsFeature if running on Windows SERVER 2008R2 or above
+if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 1))) # version should be 7+ or 6.1+
+{
+    if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3)) # type should be server or DC
+    {
+        "`n============= Checking is PowerShell 2 Windows Feature is enabled with Get-WindowsFeature =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+        Get-WindowsFeature -Name PowerShell-V2 | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+    }    
+}
+# use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin
+if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 2))) # version should be 7+ or 6.2+
+{    
+    "`n============= Checking is PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature | ft =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+    if ($runningAsAdmin)
+    {
+        Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShell* | ft DisplayName, State -AutoSize | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+    }
+    else
+    {
+        "Cannot run Get-WindowsOptionalFeature when non running as admin." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+    }
+}
+# run registry check
+"`n============= Registry Check =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+"Based on the registry value described in the following article:" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+"https://devblogs.microsoft.com/powershell/detection-logic-for-powershell-installation" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+$LegacyPowerShell = Get-ItemProperty "HKLM:\Software\Microsoft\PowerShell\1\PowerShellEngine" PowerShellVersion -ErrorAction SilentlyContinue
+if (($LegacyPowerShell.PowerShellVersion -eq "2.0") -or ($LegacyPowerShell.PowerShellVersion -eq "1.0"))
+{
+    "`nPowerShell version " + $LegacyPowerShell.PowerShellVersion + " is installed." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+}
+else
+{
+    "`nPowerShell version 1/2 is not installed." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+}
+
 # get various system info (can take a few seconds)
 write-host Running systeminfo... -ForegroundColor Yellow
-"============= Get-ComputerInfo =============" | Out-File $hostname\Systeminfo_$hostname.txt -Append
-Get-ComputerInfo | Out-File $hostname\Systeminfo_$hostname.txt -Append
+# Get-ComputerInfo exists only in PowerShell 5.1 and above
+if ($PSVersionTable.PSVersion.ToString() -ge 5.1)
+{
+    "============= Get-ComputerInfo =============" | Out-File $hostname\Systeminfo_$hostname.txt -Append
+    Get-ComputerInfo | Out-File $hostname\Systeminfo_$hostname.txt -Append
+}
 "`n`n============= systeminfo =============" | Out-File $hostname\Systeminfo_$hostname.txt -Append
 systeminfo >> $hostname\Systeminfo_$hostname.txt
 
 #########################################################
 
-# output log
-"Script Version: $Version" | Out-File $hostname\Log_$hostname.txt
-"Computer Name: $hostname" | Out-File $hostname\Log_$hostname.txt -Append
-"Running As Admin: $runningAsAdmin" | Out-File $hostname\Log_$hostname.txt -Append
-$user = whoami
-"Running User: $user" | Out-File $hostname\Log_$hostname.txt -Append
-"Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption | Out-File $hostname\Log_$hostname.txt -Append
-$uptimeDate = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject Win32_OperatingSystem).LastBootUpTime)
-"System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
-"Part of Domain: " + (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain | Out-File $hostname\Log_$hostname.txt -Append
 $currTime = Get-Date
-"`nStart Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
-"End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss")  | Out-File $hostname\Log_$hostname.txt -Append
-"Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds"  | Out-File $hostname\Log_$hostname.txt -Append
+"`nEnd Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss")  | Out-File $hostname\Log_$hostname.txt -Append
+"Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds"  | Out-File $hostname\Log_$hostname.txt -Append
 
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
 try
