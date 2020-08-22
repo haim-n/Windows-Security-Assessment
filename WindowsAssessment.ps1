@@ -1,6 +1,8 @@
-﻿param ([Switch]$EnableSensitiveInfoSearch = $false) # add the flag to search for sensitive data
+﻿param ([Switch]$EnableSensitiveInfoSearch = $false, [Switch]$RunPowerShellv2TestCommand = $false, [Switch]$RunPowerShellv5TestCommand = $false)
+# add the "EnableSensitiveInfoSearch" flag to search for sensitive data
+# add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "0.95"
+$Version = "0.96"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
@@ -17,6 +19,7 @@ $Version = "0.95"
 # v0.93 update: updated TODO
 # v0.94 update: not fetching the local users when running on a domain contoller, not running Get-ComputerInfo on old PS
 # v0.95 update: PowerShellv2 check, Windows features check updates
+# v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
@@ -730,6 +733,26 @@ write-host Getting PowerShell versions... -ForegroundColor Yellow
 "See the following article for details on PowerShell downgrade attacks: https://www.leeholmes.com/blog/2017/03/17/detecting-and-preventing-powershell-downgrade-attacks" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
 
 "`nThis script is running on PowerShell version " + $PSVersionTable.PSVersion.ToString() | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+# if the flag is enabled, run test commands to make sure whether PSv2 is installed. May cause execptions when PSv2 is not supported. Try-catch doesn't help since the error is outside PowerShell.
+if ($RunPowerShellv2TestCommand)
+{
+    "`n============= Running Test Commands on PowerShell v2 =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+    $PowerShellv2Check = powershell -version 2 -command get-host
+    if ($PowerShellv2Check -ne $null)
+        {"PowerShell version " + $PowerShellv2Check[3].split(":")[1].substring(1) + " is installed and was able to run commands." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append}
+    else
+        {"PowerShell version 2 was not able to run." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append}
+}
+# same as above, for PSv5
+if ($RunPowerShellv5TestCommand)
+{
+    "`n============= Running Test Commands on PowerShell v5 =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+    $PowerShellv5Check = powershell -version 5 -command get-host
+    if ($PowerShellv5Check -ne $null)
+        {"PowerShell version " + $PowerShellv5Check[3].split(":")[1].substring(1) + " is installed and was able to run commands." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append}
+    else
+        {"PowerShell version 5 was not able to run." | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append}
+}
 # use Get-WindowsFeature if running on Windows SERVER 2008R2 or above
 if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 1))) # version should be 7+ or 6.1+
 {
