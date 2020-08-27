@@ -57,7 +57,7 @@ Controls Checklist:
 - SAM enumeration permissions are hardened (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - RDP timeout for disconnected sessions is configured (RDP file)
 - RDP NLA is required (RDP file)
-- PowerShell v2 is uninstalled (PowerShellv2 file, and/or Windows-Features file: PowerShell-V2 feature)
+- PowerShell v2 is uninstalled (PowerShellv2 file)
 - PowerShell logging is enabled (gpresult file)
 - Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
