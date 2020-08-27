@@ -28,7 +28,6 @@ $Version = "0.96"
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
 - Determine if PowerShell logging is enabled (based on registry)
 - Test on all Windows versions
-- determine if PowerShell 2 exists by running powershell -version 2 -command xxx
 - Test the SMB1 registry check
 - Debug the FirewallProducts check
 - Check Macro and DDE (OLE) settings
