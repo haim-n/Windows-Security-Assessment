@@ -2,7 +2,7 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "0.96"
+$Version = "0.97"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
@@ -20,14 +20,17 @@ $Version = "0.96"
 # v0.94 update: not fetching the local users when running on a domain contoller, not running Get-ComputerInfo on old PS
 # v0.95 update: PowerShellv2 check, Windows features check updates
 # v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
+# v0.97 update: Uppdated TODO and checklist
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
+- Find and filter the actual security issues in the results into a single file
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
 - Determine if PowerShell logging is enabled (based on registry)
 - Test on all Windows versions
+- determine if PowerShell 2 exists by running powershell -version 2 -command xxx
 - Test the SMB1 registry check
 - Debug the FirewallProducts check
 - Check Macro and DDE (OLE) settings
@@ -40,7 +43,6 @@ $Version = "0.96"
 - Add More settings from hardening docs or PT mitigations
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 - Change script structure to functions
-- Find and filter the actual security issues in the results
 - Zip files without the need for PowerShell 5.0
 ##########################################################
 Controls Checklist:
@@ -57,13 +59,12 @@ Controls Checklist:
 - SAM enumeration permissions are hardened (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - RDP timeout for disconnected sessions is configured (RDP file)
 - RDP NLA is required (RDP file)
-- PowerShell v2 is uninstalled (PowerShellv2 file)
+- PowerShell v2 is uninstalled (PowerShellv2 file, and/or Windows-Features file: PowerShell-V2 feature)
 - PowerShell logging is enabled (gpresult file)
 - Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
 - Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing, admin needed)
 - Credential delegation is not configured or disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
-- Deny network access by local users (Security-Policy inf file: User Rights Assignment - Deny access to this computer from the network, admin needed)
 - Local administrators group is configured as a restricted group (Security-Policy inf file: Restricted Groups, admin needed)
 - Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache, admin needed)
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
@@ -127,7 +128,7 @@ $ErrorActionPreference = $PrevErrorActionPreference
 "`n========================================================================================================" | Out-File $hostname\Whoami-all_$hostname.txt -Append
 "`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $hostname\Whoami-all_$hostname.txt -Append
 "`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $hostname\Whoami-all_$hostname.txt -Append
-"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation" | Out-File $hostname\Whoami-all_$hostname.txt -Append
+"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens" | Out-File $hostname\Whoami-all_$hostname.txt -Append
 
 # get IP settings
 write-host Running ipconfig... -ForegroundColor Yellow
