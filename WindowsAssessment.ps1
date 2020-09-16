@@ -2,7 +2,7 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "0.97"
+$Version = "0.98"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
@@ -21,6 +21,7 @@ $Version = "0.97"
 # v0.95 update: PowerShellv2 check, Windows features check updates
 # v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
 # v0.97 update: Updated TODO and checklist
+# v0.97 update: Updated checklist
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
@@ -56,12 +57,12 @@ Controls Checklist:
 - NETBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
 - WDigest is disabled (WDigest file)
 - Net Session permissions are hardened (NetSession file)
-- SAM enumeration permissions are hardened (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
+- SAM enumeration permissions are hardened (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
 - RDP timeout for disconnected sessions is configured (RDP file)
 - RDP NLA is required (RDP file)
 - PowerShell v2 is uninstalled (PowerShellv2 file, and/or Windows-Features file: PowerShell-V2 feature)
 - PowerShell logging is enabled (gpresult file)
-- Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
+- Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
 - Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing, admin needed)
 - Credential delegation is not configured or disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
