@@ -20,7 +20,7 @@ $Version = "0.97"
 # v0.94 update: not fetching the local users when running on a domain contoller, not running Get-ComputerInfo on old PS
 # v0.95 update: PowerShellv2 check, Windows features check updates
 # v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
-# v0.97 update: Uppdated TODO and checklist
+# v0.97 update: Updated TODO and checklist
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
