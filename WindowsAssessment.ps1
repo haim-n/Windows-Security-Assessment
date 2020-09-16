@@ -21,7 +21,7 @@ $Version = "0.98"
 # v0.95 update: PowerShellv2 check, Windows features check updates
 # v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
 # v0.97 update: Updated TODO and checklist
-# v0.97 update: Updated checklist
+# v0.98 update: Updated checklist
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
