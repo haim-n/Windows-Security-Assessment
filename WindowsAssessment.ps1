@@ -21,7 +21,7 @@ $Version = "0.98"
 # v0.95 update: PowerShellv2 check, Windows features check updates
 # v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
 # v0.97 update: Updated TODO and checklist
-# v0.98 update: Updated checklist
+# v0.98 update: Updated checklist, fixed get-hotfix error
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
@@ -236,7 +236,7 @@ write-host Checking for installed hotfixes... -ForegroundColor Yellow
 "https://en.wikipedia.org/wiki/Windows_10_version_history" | Out-File $hostname\Hotfixes_$hostname.txt -Append
 "https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" | Out-File $hostname\Hotfixes_$hostname.txt -Append
 "`nOutput of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" | Out-File $hostname\Hotfixes_$hostname.txt -Append
-Get-HotFix | sort InstalledOn -Descending | Out-File $hostname\Hotfixes_$hostname.txt -Append
+Get-HotFix | sort InstalledOn -Descending -ErrorAction SilentlyContinue | Out-File $hostname\Hotfixes_$hostname.txt -Append
 <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
 if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
 {
