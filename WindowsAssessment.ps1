@@ -21,7 +21,7 @@ $Version = "0.98"
 # v0.95 update: PowerShellv2 check, Windows features check updates
 # v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
 # v0.97 update: Updated TODO and checklist
-# v0.98 update: Updated checklist, fixed get-hotfix error
+# v0.98 update: Updated checklist, fixed get-hotfix error, updated TODO
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
@@ -30,8 +30,6 @@ $Version = "0.98"
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
 - Determine if PowerShell logging is enabled (based on registry)
-- Test on all Windows versions
-- determine if PowerShell 2 exists by running powershell -version 2 -command xxx
 - Test the SMB1 registry check
 - Debug the FirewallProducts check
 - Check Macro and DDE (OLE) settings
@@ -40,7 +38,6 @@ $Version = "0.98"
 - Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
 - Check for Windows Update / WSUS settings
 - Check for Device Control (GPO or dedicated software)
-- Get IIS information
 - Add More settings from hardening docs or PT mitigations
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 - Change script structure to functions
@@ -97,7 +94,7 @@ $winVersion = [System.Environment]::OSVersion.Version
 
 # remove old folder and create new one
 Remove-Item $hostname -Recurse -ErrorAction SilentlyContinue
-New-Item $hostname -type directory | Out-Null
+New-Item $hostname -type directory -ErrorAction SilentlyContinue | Out-Null
 
 # output log
 "Script Version: $Version" | Out-File $hostname\Log_$hostname.txt
