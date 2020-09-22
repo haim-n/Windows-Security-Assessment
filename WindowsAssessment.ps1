@@ -2,7 +2,7 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "0.98"
+$Version = "0.99"
 # v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
 # v0.81 update: fixed comments
 # v0.82 update: added checklist
@@ -20,24 +20,27 @@ $Version = "0.98"
 # v0.94 update: not fetching the local users when running on a domain contoller, not running Get-ComputerInfo on old PS
 # v0.95 update: PowerShellv2 check, Windows features check updates
 # v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
-# v0.97 update: Updated TODO and checklist
-# v0.98 update: Updated checklist, fixed get-hotfix error, updated TODO
+# v0.97 update: updated TODO and checklist
+# v0.98 update: updated checklist, fixed get-hotfix error, updated TODO
+# v0.99 update: fixed check features output
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
 - Find and filter the actual security issues in the results into a single file
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
+- Check NTLM registry key
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
 - Determine if PowerShell logging is enabled (based on registry)
 - Test the SMB1 registry check
 - Debug the FirewallProducts check
 - Check Macro and DDE (OLE) settings
-- Find misconfigured services which allow elevation of privileges
-- Check if Internet sites are accessible (ports 80/443 test, curl/wget, etc.)
+- Check event log size settings
+- Check if Internet sites are accessible (ports 80/443 test, curl/wget, use proxy configuration, etc.)
 - Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
 - Check for Windows Update / WSUS settings
 - Check for Device Control (GPO or dedicated software)
+- Find misconfigured services which allow elevation of privileges
 - Add More settings from hardening docs or PT mitigations
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 - Change script structure to functions
@@ -59,6 +62,7 @@ Controls Checklist:
 - RDP NLA is required (RDP file)
 - PowerShell v2 is uninstalled (PowerShellv2 file, and/or Windows-Features file: PowerShell-V2 feature)
 - PowerShell logging is enabled (gpresult file)
+- Audit policy is sufficient (Audit-Policy file, admin needed)
 - Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
 - Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing, admin needed)
@@ -68,7 +72,6 @@ Controls Checklist:
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
 - Antivirus is running and updated, advanced Windows Defender features are utilized (AntiVirus file)
 - Local and domain password policies are sufficient (AccountPolicy file)
-- Audit policy is sufficient (Audit-Policy file, admin needed)
 - No overly permissive shares exists (Shares file)
 - No clear-text passwords are stored in files (Sensitive-Info file - if the EnableSensitiveInfoSearch was set)
 - Reasonable number or users/groups have local admin permissions (Local-Users file)
@@ -119,10 +122,13 @@ else
 write-host Running whoami... -ForegroundColor Yellow
 "`nOutput of `"whoami /all`" command:`n" | Out-File $hostname\Whoami-all_$hostname.txt -Append
 # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
-$PrevErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = "SilentlyContinue"
-whoami /all | Out-File $hostname\Whoami-all_$hostname.txt -Append
-$ErrorActionPreference = $PrevErrorActionPreference
+#$PrevErrorActionPreference = $ErrorActionPreference
+#$ErrorActionPreference = "SilentlyContinue"
+if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!(Test-ComputerSecureChannel)))
+    {whoami /user /groups /priv | Out-File $hostname\Whoami_$hostname.txt -Append}
+else
+    {whoami /all | Out-File $hostname\Whoami_$hostname.txt -Append}
+#$ErrorActionPreference = $PrevErrorActionPreference
 "`n========================================================================================================" | Out-File $hostname\Whoami-all_$hostname.txt -Append
 "`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $hostname\Whoami-all_$hostname.txt -Append
 "`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $hostname\Whoami-all_$hostname.txt -Append
@@ -146,6 +152,15 @@ ping -n 2 8.8.8.8 | Out-File $hostname\Internet-Connectivity_$hostname.txt -Appe
 #}
 #catch {"Test-NetConnection command doesn't exists, old powershell version." | Out-File $hostname\Internet-Connectivity_$hostname.txt -Append}
 
+# get network connections (run-as admin is required for -b associated application switch)
+write-host Running netstat... -ForegroundColor Yellow
+"`n============= netstat -nao =============" | Out-File $hostname\Netstat_$hostname.txt -Append
+netstat -nao | Out-File $hostname\Netstat_$hostname.txt -Append
+"`n============= netstat -naob (includes process name, elevated admin permission is required =============" | Out-File $hostname\Netstat_$hostname.txt -Append
+netstat -naob | Out-File $hostname\Netstat_$hostname.txt -Append
+# "============= netstat -ao  =============" | Out-File $hostname\Netstat_$hostname.txt  -Append
+# netstat -ao | Out-File $hostname\Netstat_$hostname.txt -Append  # shows server names, but takes a lot of time and not very important
+
 # get GPOs
 # check if the computer is in a domain
 if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
@@ -153,7 +168,7 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
     # check if we have connectivity to the domain, or if is a DC
     if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
     {
-        write-host Checking GPOs... -ForegroundColor Yellow
+        write-host Running GPResult to get GPOs... -ForegroundColor Yellow
         gpresult /h $hostname\gpresult_$hostname.html
         # /h doesn't exists on Windows 2003
         if (!(Test-Path $hostname\gpresult_$hostname.html)) {gpresult $hostname\gpresult_$hostname.txt}
@@ -176,12 +191,45 @@ else
     write-host Unable to get security policy settings... elevated admin permissions are required -ForegroundColor Red
 }
 
+# get audit policy (Windows vista/2008 & run-as admin are required)
+if ($winVersion.Major -ge 6)
+{
+    if ($runningAsAdmin)
+    {
+        write-host Getting audit policy settings... -ForegroundColor Yellow
+        "`nOutput of `"auditpol /get /category:*`" command:`n" | Out-File $hostname\Audit-Policy_$hostname.txt -Append
+        auditpol /get /category:* | Out-File $hostname\Audit-Policy_$hostname.txt -Append
+    }
+    else
+    {
+        write-host Unable to get audit policy... elevated admin permissions are required -ForegroundColor Red
+        "Unable to get audit policy without running as admin. Consider running again with elevated admin permissions."  > $hostname\Audit-Policy_$hostname.txt
+    }
+}
+
 # get windows features (Windows vista/2008 or above is required)
 if ($winVersion.Major -ge 6)
 {    
+    # first check if we can fetch Windows features in any way - Windows workstation without RunAsAdmin cannot fetch features (also Win2008 but it's rare...)
+    if ((!$runningAsAdmin) -and ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1))
+    {
+        write-host Unable to get Windows features... elevated admin permissions are required -ForegroundColor Red
+    }
+    else
+    {
+        write-host Getting Windows features... -ForegroundColor Yellow
+    }
 
-    write-host Checking windows features... -ForegroundColor Yellow
     "There are several ways of getting the Windows features. Some require elevation. See the following for details: https://hahndorf.eu/blog/WindowsFeatureViaCmd" | Out-File $hostname\Windows-Features_$hostname.txt -Append
+    # get features with Get-WindowsFeature. Requires Windows SERVER 2008R2 or above
+    if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 1)) # version should be 7+ or 6.1+
+    {
+        if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3))
+        {
+            "`n============= Output of: Get-WindowsFeature =============" | Out-File $hostname\Windows-Features_$hostname.txt -Append
+            Get-WindowsFeature | ft -AutoSize | Out-File $hostname\Windows-Features_$hostname.txt -Append
+        }
+    }
     # get features with Get-WindowsOptionalFeature. Requires Windows 8/2012 or above and run-as-admin
     if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)) # version should be 7+ or 6.2+
     {
@@ -199,35 +247,10 @@ if ($winVersion.Major -ge 6)
     }
     else
         {"Unable to run dism without running as admin. Consider running again with elevated admin permissions." | Out-File $hostname\Windows-Features_$hostname.txt -Append}
-    # get features with Get-WindowsFeature. Requires Windows SERVER 2008R2 or above
-    if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 1)) # version should be 7+ or 6.1+
-    {
-        if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3))
-        {
-            "`n============= Output of: Get-WindowsFeature =============" | Out-File $hostname\Windows-Features_$hostname.txt -Append
-            Get-WindowsFeature | ft -AutoSize | Out-File $hostname\Windows-Features_$hostname.txt -Append
-        }
-    }
-}
-
-# get audit policy (Windows vista/2008 & run-as admin are required)
-if ($winVersion.Major -ge 6)
-{
-    if ($runningAsAdmin)
-    {
-        write-host Checking audit policy... -ForegroundColor Yellow
-        "`nOutput of `"auditpol /get /category:*`" command:`n" | Out-File $hostname\Audit-Policy_$hostname.txt -Append
-        auditpol /get /category:* | Out-File $hostname\Audit-Policy_$hostname.txt -Append
-    }
-    else
-    {
-        write-host Unable to get audit policy... elevated admin permissions are required -ForegroundColor Red
-        "Unable to get audit policy without running as admin. Consider running again with elevated admin permissions."  > $hostname\Audit-Policy_$hostname.txt
-    }
 }
 
 # get installed hotfixes (/format:htable doesn't always work)
-write-host Checking for installed hotfixes... -ForegroundColor Yellow
+write-host Getting installed hotfixes... -ForegroundColor Yellow
 "`nThe OS version is: " + [System.Environment]::OSVersion + ". See if this version is supported according to the following pages:" | Out-File $hostname\Hotfixes_$hostname.txt -Append
 "https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" | Out-File $hostname\Hotfixes_$hostname.txt -Append
 "https://en.wikipedia.org/wiki/Windows_10_version_history" | Out-File $hostname\Hotfixes_$hostname.txt -Append
@@ -344,17 +367,8 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2)
     }
 }
 	
-# get network connections (run-as admin is required for -b associated application switch)
-write-host Running netstat... -ForegroundColor Yellow
-"`n============= netstat -nao =============" | Out-File $hostname\Netstat_$hostname.txt -Append
-netstat -nao | Out-File $hostname\Netstat_$hostname.txt -Append
-"`n============= netstat -naob (includes process name, elevated admin permission is required =============" | Out-File $hostname\Netstat_$hostname.txt -Append
-netstat -naob | Out-File $hostname\Netstat_$hostname.txt -Append
-# "============= netstat -ao  =============" | Out-File $hostname\Netstat_$hostname.txt  -Append
-# netstat -ao | Out-File $hostname\Netstat_$hostname.txt -Append  # shows server names, but takes a lot of time and not very important
-
 # check SMB protocol hardening
-Write-Host Checking SMB hardening... -ForegroundColor Yellow
+Write-Host Getting SMB hardening configuration... -ForegroundColor Yellow
 "`n============= SMB versions Support (Server Settings) =============" | Out-File $hostname\SMB_$hostname.txt
 # Check if Windows Vista/2008 or above
 if ($winVersion.Major -ge 6)
@@ -441,7 +455,7 @@ else
 
 
 # Getting RDP security settings
-Write-Host Checking RDP security settings... -ForegroundColor Yellow
+Write-Host Getting RDP security settings... -ForegroundColor Yellow
 "============= Raw RDP Settings =============" | Out-File $hostname\RDP_$hostname.txt -Append
 $RDP = Get-WmiObject -class Win32_TSGeneralSetting -Namespace root\cimv2\terminalservices -Filter “TerminalName='RDP-tcp'” 
 $RDP | fl Terminal*,*Encrypt*, Policy*,Security*,SSL*,*Auth* | Out-File $hostname\RDP_$hostname.txt -Append
@@ -476,7 +490,7 @@ else
 # getting credential guard settings (for Windows 10/2016 and above only)
 if ($winVersion.Major -ge 10)
 {
-    Write-Host Checking credential guard settings... -ForegroundColor Yellow
+    Write-Host Getting credential guard settings... -ForegroundColor Yellow
     $DevGuard = Get-CimInstance –ClassName Win32_DeviceGuard –Namespace root\Microsoft\Windows\DeviceGuard
     "============= Credential Guard Settings from WMI =============" | Out-File $hostname\Credential-Guard_$hostname.txt -Append
     if (($DevGuard.SecurityServicesConfigured -contains 1) -and ($DevGuard.SecurityServicesRunning -contains 1))
@@ -503,7 +517,7 @@ if ($winVersion.Major -ge 10)
 # getting LSA protection configuration (for Windows 8.1 and above only)
 if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
 {
-    Write-Host Checking LSA protection settings... -ForegroundColor Yellow
+    Write-Host Getting LSA protection settings... -ForegroundColor Yellow
     $RunAsPPL = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" RunAsPPL -ErrorAction SilentlyContinue
     if ($RunAsPPL -eq $null)
         {"RunAsPPL registry value does not exists. LSA protection is off . Which is bad and a possible finding." | Out-File $hostname\LSA-Protection_$hostname.txt}
