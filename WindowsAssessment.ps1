@@ -3,16 +3,6 @@
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
 $Version = "0.99"
-# v0.80 update: added NetSession check, added additional NBT-NS check, updated whoami and CredGuard bugs
-# v0.81 update: fixed comments
-# v0.82 update: added checklist
-# v0.83 update: minor fixes
-# v0.84 update: updated TODO
-# v0.85 update: updated credential delegation - TODO and checklist, updated where admin is needed
-# v0.86 update: updated TODO and checklist on PowerShell logging
-# v0.87 update: added checklist
-# v0.88 update: NetSession updates
-# v0.89 update: Updated checklist regarding Kerberos algorithms
 # v0.90 update: Windows Defender assessment, SAM enumeration restriction
 # v0.91 update: added build version to hotfix output, added flag for sensitive info search (disabled by default)
 # v0.92 update: updated TODO
