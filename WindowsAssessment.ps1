@@ -2,17 +2,7 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "0.99"
-# v0.90 update: Windows Defender assessment, SAM enumeration restriction
-# v0.91 update: added build version to hotfix output, added flag for sensitive info search (disabled by default)
-# v0.92 update: updated TODO
-# v0.93 update: updated TODO
-# v0.94 update: not fetching the local users when running on a domain contoller, not running Get-ComputerInfo on old PS
-# v0.95 update: PowerShellv2 check, Windows features check updates
-# v0.96 update: PowerShellv2/5 actual checks - based on running commands (flag is needed)
-# v0.97 update: updated TODO and checklist
-# v0.98 update: updated checklist, fixed get-hotfix error, updated TODO
-# v0.99 update: fixed check features output
+$Version = "1.0" # used for logging purposes
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
