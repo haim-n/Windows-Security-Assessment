@@ -10,6 +10,7 @@ $Version = "1.0" # used for logging purposes
 - Find and filter the actual security issues in the results into a single file
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 - Check NTLM registry key
+- Check for additional checks from windows_hardening.cmd script
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
 - Determine if PowerShell logging is enabled (based on registry)
 - Test the SMB1 registry check
