@@ -2,7 +2,7 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "1.0" # used for logging purposes
+$Version = "1.1" # used for logging purposes
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
@@ -101,7 +101,7 @@ else
 
 # get current user privileges
 write-host Running whoami... -ForegroundColor Yellow
-"`nOutput of `"whoami /all`" command:`n" | Out-File $hostname\Whoami-all_$hostname.txt -Append
+"`nOutput of `"whoami /all`" command:`n" | Out-File $hostname\Whoami_$hostname.txt -Append
 # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
 #$PrevErrorActionPreference = $ErrorActionPreference
 #$ErrorActionPreference = "SilentlyContinue"
@@ -110,10 +110,10 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!(Test-Comput
 else
     {whoami /all | Out-File $hostname\Whoami_$hostname.txt -Append}
 #$ErrorActionPreference = $PrevErrorActionPreference
-"`n========================================================================================================" | Out-File $hostname\Whoami-all_$hostname.txt -Append
-"`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $hostname\Whoami-all_$hostname.txt -Append
-"`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $hostname\Whoami-all_$hostname.txt -Append
-"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens" | Out-File $hostname\Whoami-all_$hostname.txt -Append
+"`n========================================================================================================" | Out-File $hostname\Whoami_$hostname.txt -Append
+"`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $hostname\Whoami_$hostname.txt -Append
+"`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $hostname\Whoami_$hostname.txt -Append
+"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens" | Out-File $hostname\Whoami_$hostname.txt -Append
 
 # get IP settings
 write-host Running ipconfig... -ForegroundColor Yellow
