@@ -652,22 +652,24 @@ $WDigest = Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\SecurityProv
 if ($WDigest -eq $null)
 {
     "`nWDigest UseLogonCredential registry key wasn't found." | Out-File $hostname\WDigest_$hostname.txt -Append
+    # check if running on Windows 6.3 or above
     if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
         {"`nThe WDigest UseLogonCredential is turned off by default for Win8.1/2012R2 and above. It's OK." | Out-File $hostname\WDigest_$hostname.txt -Append}
     else
     {
+        # check if running on Windows 6.1/6.2, which can be hardened, or on older version
         if (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 1))    
-        {"`nWDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding." | Out-File $hostname\WDigest_$hostname.txt -Append}
+            {"`nWDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding." | Out-File $hostname\WDigest_$hostname.txt -Append}
         else
-        {"`nThe operating system version is not supported. You have worse problems than WDigest configuration." | Out-File $hostname\WDigest_$hostname.txt -Append}
+            {"`nThe operating system version is not supported. You have worse problems than WDigest configuration." | Out-File $hostname\WDigest_$hostname.txt -Append}
     }
 }
 else
-{
+{    
     if ($WDigest.UseLogonCredential -eq 0)
-    {"`nWDigest doesn't store cleartext user credentials in memory, which is good." | Out-File $hostname\WDigest_$hostname.txt -Append}
+        {"`nWDigest doesn't store cleartext user credentials in memory, which is good." | Out-File $hostname\WDigest_$hostname.txt -Append}
     if ($WDigest.UseLogonCredential -eq 1)
-    {"`nWDigest stores cleartext user credentials in memory, which is bad and a possible finding." | Out-File $hostname\WDigest_$hostname.txt -Append}
+        {"`nWDigest stores cleartext user credentials in memory, which is bad and a possible finding." | Out-File $hostname\WDigest_$hostname.txt -Append}
 }
 
 
