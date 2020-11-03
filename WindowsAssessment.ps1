@@ -2,7 +2,7 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "1.1" # used for logging purposes
+$Version = "1.2" # used for logging purposes
 ##########################################################
 <# TODO:
 - Log the time of each operation to the log file (create a function for it and reuse)
@@ -753,14 +753,14 @@ if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.M
 {
     if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3)) # type should be server or DC
     {
-        "`n============= Checking is PowerShell 2 Windows Feature is enabled with Get-WindowsFeature =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+        "`n============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsFeature =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
         Get-WindowsFeature -Name PowerShell-V2 | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
     }    
 }
 # use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin
 if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 2))) # version should be 7+ or 6.2+
 {    
-    "`n============= Checking is PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature | ft =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
+    "`n============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature | ft =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
     if ($runningAsAdmin)
     {
         Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShell* | ft DisplayName, State -AutoSize | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
