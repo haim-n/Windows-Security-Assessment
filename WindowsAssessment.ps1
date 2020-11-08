@@ -5,9 +5,9 @@
 $Version = "1.3" # used for logging purposes
 ##########################################################
 <# TODO:
-- Log the time of each operation to the log file (create a function for it and reuse)
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
-- Find and filter the actual security issues in the results into a single file
+- Output the results to a single file with a simple table
+- When the script is running by an admin but without UAC, pop an UAC confirmation
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 - Check NTLM registry key
 - Check for additional checks from windows_hardening.cmd script
@@ -23,6 +23,7 @@ $Version = "1.3" # used for logging purposes
 - Check for Device Control (GPO or dedicated software)
 - Find misconfigured services which allow elevation of privileges
 - Add More settings from hardening docs or PT mitigations
+- Log the time of each operation to the log file (create a function for it and reuse)
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 - Change script structure to functions
 - Zip files without the need for PowerShell 5.0
