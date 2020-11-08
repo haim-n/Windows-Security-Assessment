@@ -7,7 +7,7 @@ $Version = "1.3" # used for logging purposes
 <# TODO:
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
 - Output the results to a single file with a simple table
-- When the script is running by an admin but without UAC, pop an UAC confirmation
+- When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 - Check NTLM registry key
 - Check for additional checks from windows_hardening.cmd script
