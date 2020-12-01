@@ -694,7 +694,7 @@ $SessionRegValue | Out-File $hostname\NetSession_$hostname.txt -Append
 
 # check for SAM enumeration permissions
 write-host Getting SAM enumeration configuration... -ForegroundColor Yellow
-"============= NetSession Configuration =============" | Out-File $hostname\SAM_Enumeration_$hostname.txt
+"============= Remote SAM (SAMR) Configuration =============" | Out-File $hostname\SAM_Enumeration_$hostname.txt
 "`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
 "However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
 "These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
