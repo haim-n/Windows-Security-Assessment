@@ -61,6 +61,9 @@ Controls Checklist:
 - User Rights Assignment privileges don't allow privilege escalation by non-admins (Security-Policy inf file: User Rights Assignment, admin needed)
 - Services are not running with overly permissive privileges (Services file)
 - No irrelevant/malicious processes/services/software exists (Services, Process-list, Software, Netstat files)
+- Outbound internet access is restricted (Internet-Connectivity file)
+- Event Log size is enlarged and/or logs are exported to SIEM
+- Macros are restricted
 ##########################################################
 @Haim Nachmias
 ##########################################################>
