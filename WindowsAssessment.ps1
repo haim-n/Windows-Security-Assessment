@@ -54,6 +54,7 @@ Controls Checklist:
 - Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache, admin needed)
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
 - Antivirus is running and updated, advanced Windows Defender features are utilized (AntiVirus file)
+- Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch, admin needed)
 - Local and domain password policies are sufficient (AccountPolicy file)
 - No overly permissive shares exists (Shares file)
 - No clear-text passwords are stored in files (Sensitive-Info file - if the EnableSensitiveInfoSearch was set)
