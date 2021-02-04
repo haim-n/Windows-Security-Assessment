@@ -67,6 +67,7 @@ Controls Checklist:
 - Outbound internet access is restricted (Internet-Connectivity file)
 - Event Log size is enlarged and/or logs are exported to SIEM
 - Macros are restricted
+- Defender ASR rules are configured
 ##########################################################
 @Haim Nachmias
 ##########################################################>
