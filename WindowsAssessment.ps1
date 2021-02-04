@@ -5,8 +5,9 @@
 $Version = "1.3" # used for logging purposes
 ##########################################################
 <# TODO:
-- Add "Get-MpPreference" and ASR rules
 - Add Domain Name to log file
+- Add "Get-MpPreference" and ASR rules
+- Get Windows Firewall config (Get-NetFirewall*)
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
 - Output the results to a single file with a simple table
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
