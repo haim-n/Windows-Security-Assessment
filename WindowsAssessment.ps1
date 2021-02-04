@@ -5,6 +5,7 @@
 $Version = "1.3" # used for logging purposes
 ##########################################################
 <# TODO:
+- Add "Get-MpPreference" and FW rules
 - Add Domain Name to log file
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
 - Output the results to a single file with a simple table
