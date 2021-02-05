@@ -2,12 +2,15 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "1.2" # used for logging purposes
+$Version = "1.3" # used for logging purposes
 ##########################################################
 <# TODO:
-- Log the time of each operation to the log file (create a function for it and reuse)
+- Add Domain Name to log file
+- Add "Get-MpPreference" and ASR rules
+- Get Windows Firewall config (Get-NetFirewall*)
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
-- Find and filter the actual security issues in the results into a single file
+- Output the results to a single file with a simple table
+- When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 - Check NTLM registry key
 - Check for additional checks from windows_hardening.cmd script
@@ -23,6 +26,7 @@ $Version = "1.2" # used for logging purposes
 - Check for Device Control (GPO or dedicated software)
 - Find misconfigured services which allow elevation of privileges
 - Add More settings from hardening docs or PT mitigations
+- Log the time of each operation to the log file (create a function for it and reuse)
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 - Change script structure to functions
 - Zip files without the need for PowerShell 5.0
@@ -48,10 +52,11 @@ Controls Checklist:
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
 - Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing, admin needed)
 - Credential delegation is not configured or disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
-- Local administrators group is configured as a restricted group (Security-Policy inf file: Restricted Groups, admin needed)
+- Local administrators group is configured as a restricted group with fixed members (Security-Policy inf file: Restricted Groups, admin needed)
 - Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache, admin needed)
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
 - Antivirus is running and updated, advanced Windows Defender features are utilized (AntiVirus file)
+- Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch, admin needed)
 - Local and domain password policies are sufficient (AccountPolicy file)
 - No overly permissive shares exists (Shares file)
 - No clear-text passwords are stored in files (Sensitive-Info file - if the EnableSensitiveInfoSearch was set)
@@ -59,6 +64,10 @@ Controls Checklist:
 - User Rights Assignment privileges don't allow privilege escalation by non-admins (Security-Policy inf file: User Rights Assignment, admin needed)
 - Services are not running with overly permissive privileges (Services file)
 - No irrelevant/malicious processes/services/software exists (Services, Process-list, Software, Netstat files)
+- Outbound internet access is restricted (Internet-Connectivity file)
+- Event Log size is enlarged and/or logs are exported to SIEM
+- Macros are restricted
+- Defender ASR rules are configured
 ##########################################################
 @Haim Nachmias
 ##########################################################>
@@ -692,7 +701,7 @@ $SessionRegValue | Out-File $hostname\NetSession_$hostname.txt -Append
 
 # check for SAM enumeration permissions
 write-host Getting SAM enumeration configuration... -ForegroundColor Yellow
-"============= NetSession Configuration =============" | Out-File $hostname\SAM_Enumeration_$hostname.txt
+"============= Remote SAM (SAMR) Configuration =============" | Out-File $hostname\SAM_Enumeration_$hostname.txt
 "`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
 "However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
 "These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
