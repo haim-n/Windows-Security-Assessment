@@ -65,7 +65,8 @@ Controls Checklist:
 - Outbound internet access is restricted (Internet-Connectivity file)
 - Event Log size is enlarged and/or logs are exported to SIEM
 - Macros are restricted
-- Defender ASR rules are configured
+- Defender ASR rules are configured (AntiVirus file)
+- Host firewall rules are configured to block inbound (Windows-Firewall and Windows-Firewall-Rules files)
 ##########################################################
 @Haim Nachmias
 ##########################################################>
@@ -637,8 +638,8 @@ if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.M
     "The output of Get-NetFirewallProfile is:`n" | Out-File $hostname\Windows-Firewall_$hostname.txt -Append
     Get-NetFirewallProfile | ft | Out-File -Width 400 $hostname\Windows-Firewall_$hostname.txt -Append    
     "`n----------------------------------`n" | Out-File $hostname\Windows-Firewall_$hostname.txt -Append    
-    Get-NetFirewallRule | Export-Csv $hostname\Windows-Firewall_Rules_$hostname.csv -NoTypeInformation
-    "The output of Get-NetFirewallRule can be found in the Windows-Firewall_Rules CSV file." | Out-File $hostname\Windows-Firewall_$hostname.txt -Append
+    Get-NetFirewallRule | Export-Csv $hostname\Windows-Firewall-Rules_$hostname.csv -NoTypeInformation
+    "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file." | Out-File $hostname\Windows-Firewall_$hostname.txt -Append
 }
 
 # check if LLMNR and NETBIOS-NS are enabled
@@ -732,7 +733,7 @@ write-host Getting SAM enumeration configuration... -ForegroundColor Yellow
 "However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
 "These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
 "The newer OS versions are also recommended to be configured with the policy, , though it is not essential." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
-"`nSee more details here:" | Out-File $hostname\SAM0Enumeration_$hostname.txt -Append
+"`nSee more details here:" | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
 "https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-access-restrict-clients-allowed-to-make-remote-sam-calls" | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
 "https://blog.stealthbits.com/making-internal-reconnaissance-harder-using-netcease-and-samri1o" | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
 "`n----------------------------------------------------" | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
