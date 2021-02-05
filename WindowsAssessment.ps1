@@ -5,17 +5,17 @@
 $Version = "1.4" # used for logging purposes
 ##########################################################
 <# TODO:
-- Move lists to CSV format instead of TXT
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
 - Output the results to a single file with a simple table
-- When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 - Check NTLM registry key
-- Check for additional checks from windows_hardening.cmd script
+- Test the SMB1 registry check
 - Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
 - Determine if PowerShell logging is enabled (based on registry)
-- Test the SMB1 registry check
 - Debug the FirewallProducts check
+- Move lists to CSV format instead of TXT
+- When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
+- Check for additional checks from windows_hardening.cmd script
 - Check Macro and DDE (OLE) settings
 - Check event log size settings
 - Check if Internet sites are accessible (ports 80/443 test, curl/wget, use proxy configuration, etc.)
@@ -89,82 +89,88 @@ Remove-Item $hostname -Recurse -ErrorAction SilentlyContinue
 New-Item $hostname -type directory -ErrorAction SilentlyContinue | Out-Null
 
 # output log
-"Computer Name: $hostname" | Out-File $hostname\Log_$hostname.txt -Append
-"Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption | Out-File $hostname\Log_$hostname.txt -Append
+$outputFileName = "$hostname\Log_$hostname.txt"
+"Computer Name: $hostname" | Out-File $outputFileName -Append
+"Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption | Out-File $outputFileName -Append
 $partOfDomain = (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
-"Part of Domain: $partOfDomain" | Out-File $hostname\Log_$hostname.txt -Append
+"Part of Domain: $partOfDomain" | Out-File $outputFileName -Append
 if ($partOfDomain)
 {
-    "Domain Name: " + (Get-WmiObject -class Win32_ComputerSystem).Domain | Out-File $hostname\Log_$hostname.txt -Append
+    "Domain Name: " + (Get-WmiObject -class Win32_ComputerSystem).Domain | Out-File $outputFileName -Append
     if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
-        {"Domain Controller: True" | Out-File $hostname\Log_$hostname.txt -Append}
+        {"Domain Controller: True" | Out-File $outputFileName -Append}
     else
-        {"Domain Controller: False" | Out-File $hostname\Log_$hostname.txt -Append}    
+        {"Domain Controller: False" | Out-File $outputFileName -Append}    
 }
 $user = whoami
-"`nRunning User: $user" | Out-File $hostname\Log_$hostname.txt -Append
-"Running As Admin: $runningAsAdmin" | Out-File $hostname\Log_$hostname.txt -Append
+"`nRunning User: $user" | Out-File $outputFileName -Append
+"Running As Admin: $runningAsAdmin" | Out-File $outputFileName -Append
 $uptimeDate = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject Win32_OperatingSystem).LastBootUpTime)
-"System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
-"Script Version: $Version" | Out-File $hostname\Log_$hostname.txt -Append
-"Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
+"System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $outputFileName -Append
+"Script Version: $Version" | Out-File $outputFileName -Append
+"Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $outputFileName -Append
 
 #########################################################
 
 # get current user privileges
 write-host Running whoami... -ForegroundColor Yellow
-"`nOutput of `"whoami /all`" command:`n" | Out-File $hostname\Whoami_$hostname.txt -Append
+$outputFileName = "$hostname\Whoami_$hostname.txt"
+"`nOutput of `"whoami /all`" command:`n" | Out-File $outputFileName -Append
 # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
 #$PrevErrorActionPreference = $ErrorActionPreference
 #$ErrorActionPreference = "SilentlyContinue"
 if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!(Test-ComputerSecureChannel)))
-    {whoami /user /groups /priv | Out-File $hostname\Whoami_$hostname.txt -Append}
+    {whoami /user /groups /priv | Out-File $outputFileName -Append}
 else
-    {whoami /all | Out-File $hostname\Whoami_$hostname.txt -Append}
+    {whoami /all | Out-File $outputFileName -Append}
 #$ErrorActionPreference = $PrevErrorActionPreference
-"`n========================================================================================================" | Out-File $hostname\Whoami_$hostname.txt -Append
-"`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $hostname\Whoami_$hostname.txt -Append
-"`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $hostname\Whoami_$hostname.txt -Append
-"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens" | Out-File $hostname\Whoami_$hostname.txt -Append
+"`n========================================================================================================" | Out-File $outputFileName -Append
+"`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $outputFileName -Append
+"`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $outputFileName -Append
+"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens" | Out-File $outputFileName -Append
 
 # get IP settings
 write-host Running ipconfig... -ForegroundColor Yellow
-"`nOutput of `"ipconfig /all`" command:`n" | Out-File $hostname\ipconfig_$hostname.txt -Append
-ipconfig /all | Out-File $hostname\ipconfig_$hostname.txt -Append
+$outputFileName = "$hostname\ipconfig_$hostname.txt"
+"`nOutput of `"ipconfig /all`" command:`n" | Out-File $outputFileName -Append
+ipconfig /all | Out-File $outputFileName -Append
 
 # test for internet connectivity
 write-host Trying to ping the internet... -ForegroundColor Yellow
-"============= ping -n 2 8.8.8.8 =============" | Out-File $hostname\Internet-Connectivity_$hostname.txt
-ping -n 2 8.8.8.8 | Out-File $hostname\Internet-Connectivity_$hostname.txt -Append
+$outputFileName = "$hostname\Internet-Connectivity_$hostname.txt"
+"============= ping -n 2 8.8.8.8 =============" | Out-File $outputFileName -Append
+ping -n 2 8.8.8.8 | Out-File $outputFileName -Append
 # more detailed test for newer PowerShell versions - takes a lot of time and not very important
 #try {
-    # "============= Test-NetConnection -InformationLevel Detailed =============" | Out-File $hostname\Internet-Connectivity_$hostname.txt -Append
-    # Test-NetConnection -InformationLevel Detailed | Out-File $hostname\Internet-Connectivity_$hostname.txt -Append
-    #"============= Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed =============" | Out-File $hostname\Internet-Connectivity_$hostname.txt -Append
-    #Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed | Out-File $hostname\Internet-Connectivity_$hostname.txt -Append
+    # "============= Test-NetConnection -InformationLevel Detailed =============" | Out-File $outputFileName -Append
+    # Test-NetConnection -InformationLevel Detailed | Out-File $outputFileName -Append
+    #"============= Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed =============" | Out-File $outputFileName -Append
+    #Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed | Out-File $outputFileName -Append
 #}
-#catch {"Test-NetConnection command doesn't exists, old powershell version." | Out-File $hostname\Internet-Connectivity_$hostname.txt -Append}
+#catch {"Test-NetConnection command doesn't exists, old powershell version." | Out-File $outputFileName -Append}
 
 # get network connections (run-as admin is required for -b associated application switch)
+$outputFileName = "$hostname\Netstat_$hostname.txt"
 write-host Running netstat... -ForegroundColor Yellow
-"`n============= netstat -nao =============" | Out-File $hostname\Netstat_$hostname.txt -Append
-netstat -nao | Out-File $hostname\Netstat_$hostname.txt -Append
-"`n============= netstat -naob (includes process name, elevated admin permission is required =============" | Out-File $hostname\Netstat_$hostname.txt -Append
-netstat -naob | Out-File $hostname\Netstat_$hostname.txt -Append
-# "============= netstat -ao  =============" | Out-File $hostname\Netstat_$hostname.txt  -Append
-# netstat -ao | Out-File $hostname\Netstat_$hostname.txt -Append  # shows server names, but takes a lot of time and not very important
+"`n============= netstat -nao =============" | Out-File $outputFileName -Append
+netstat -nao | Out-File $outputFileName -Append
+"`n============= netstat -naob (includes process name, elevated admin permission is required =============" | Out-File $outputFileName -Append
+netstat -naob | Out-File $outputFileName -Append
+# "============= netstat -ao  =============" | Out-File $outputFileName  -Append
+# netstat -ao | Out-File $outputFileName -Append  # shows server names, but takes a lot of time and not very important
 
 # get GPOs
 # check if the computer is in a domain
+$outputFileName = "$hostname\gpresult_$hostname.html"
 if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
 {
     # check if we have connectivity to the domain, or if is a DC
     if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
     {
         write-host Running GPResult to get GPOs... -ForegroundColor Yellow
-        gpresult /h $hostname\gpresult_$hostname.html
-        # /h doesn't exists on Windows 2003
-        if (!(Test-Path $hostname\gpresult_$hostname.html)) {gpresult $hostname\gpresult_$hostname.txt}
+        gpresult /f /h $outputFileName
+        # /h doesn't exists on Windows 2003, so we run without /h into txt file
+        if (!(Test-Path $outputFileName)) {gpresult $hostname\gpresult_$hostname.txt}
     }
     else
     {
@@ -174,10 +180,11 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
 
 # get security policy settings (secpol.msc), run as admin is required
 # to open the *.inf output file, open MMC, add snap-in "Security Templates", right click and choose new path, choose the *.inf file path, and open it
+$outputFileName = "$hostname\Security-Policy_$hostname.inf"
 if ($runningAsAdmin)
 {
     write-host Getting security policy settings... -ForegroundColor Yellow
-    secedit /export /CFG $hostname\Security-Policy_$hostname.inf | Out-Null
+    secedit /export /CFG $outputFileName | Out-Null
 }
 else
 {
@@ -185,13 +192,14 @@ else
 }
 
 # get audit policy (Windows vista/2008 & run-as admin are required)
+$outputFileName = "$hostname\Audit-Policy_$hostname.txt"
 if ($winVersion.Major -ge 6)
 {
     if ($runningAsAdmin)
     {
         write-host Getting audit policy settings... -ForegroundColor Yellow
-        "`nOutput of `"auditpol /get /category:*`" command:`n" | Out-File $hostname\Audit-Policy_$hostname.txt -Append
-        auditpol /get /category:* | Out-File $hostname\Audit-Policy_$hostname.txt -Append
+        "`nOutput of `"auditpol /get /category:*`" command:`n" | Out-File $outputFileName -Append
+        auditpol /get /category:* | Out-File $outputFileName -Append
     }
     else
     {
@@ -201,6 +209,7 @@ if ($winVersion.Major -ge 6)
 }
 
 # get windows features (Windows vista/2008 or above is required)
+$outputFileName = "$hostname\Windows-Features_$hostname.txt"
 if ($winVersion.Major -ge 6)
 {    
     # first check if we can fetch Windows features in any way - Windows workstation without RunAsAdmin cannot fetch features (also Win2008 but it's rare...)
@@ -213,43 +222,44 @@ if ($winVersion.Major -ge 6)
         write-host Getting Windows features... -ForegroundColor Yellow
     }
 
-    "There are several ways of getting the Windows features. Some require elevation. See the following for details: https://hahndorf.eu/blog/WindowsFeatureViaCmd" | Out-File $hostname\Windows-Features_$hostname.txt -Append
+    "There are several ways of getting the Windows features. Some require elevation. See the following for details: https://hahndorf.eu/blog/WindowsFeatureViaCmd" | Out-File $outputFileName -Append
     # get features with Get-WindowsFeature. Requires Windows SERVER 2008R2 or above
     if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 1)) # version should be 7+ or 6.1+
     {
         if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3))
         {
-            "`n============= Output of: Get-WindowsFeature =============" | Out-File $hostname\Windows-Features_$hostname.txt -Append
-            Get-WindowsFeature | ft -AutoSize | Out-File $hostname\Windows-Features_$hostname.txt -Append
+            "`n============= Output of: Get-WindowsFeature =============" | Out-File $outputFileName -Append
+            Get-WindowsFeature | ft -AutoSize | Out-File $outputFileName -Append
         }
     }
     # get features with Get-WindowsOptionalFeature. Requires Windows 8/2012 or above and run-as-admin
     if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)) # version should be 7+ or 6.2+
     {
-        "`n============= Output of: Get-WindowsOptionalFeature -Online =============" | Out-File $hostname\Windows-Features_$hostname.txt -Append
+        "`n============= Output of: Get-WindowsOptionalFeature -Online =============" | Out-File $outputFileName -Append
         if ($runningAsAdmin)
-            {Get-WindowsOptionalFeature -Online | sort FeatureName | ft | Out-File $hostname\Windows-Features_$hostname.txt -Append}
+            {Get-WindowsOptionalFeature -Online | sort FeatureName | ft | Out-File $outputFileName -Append}
         else
-            {"Unable to run Get-WindowsOptionalFeature without running as admin. Consider running again with elevated admin permissions." | Out-File $hostname\Windows-Features_$hostname.txt -Append}
+            {"Unable to run Get-WindowsOptionalFeature without running as admin. Consider running again with elevated admin permissions." | Out-File $outputFileName -Append}
     }
     # get features with dism. Requires run-as-admin
-    "`n============= Output of: dism /online /get-features /format:table | ft =============" | Out-File $hostname\Windows-Features_$hostname.txt -Append
+    "`n============= Output of: dism /online /get-features /format:table | ft =============" | Out-File $outputFileName -Append
     if ($runningAsAdmin)
     {
-        dism /online /get-features /format:table | Out-File $hostname\Windows-Features_$hostname.txt -Append
+        dism /online /get-features /format:table | Out-File $outputFileName -Append
     }
     else
-        {"Unable to run dism without running as admin. Consider running again with elevated admin permissions." | Out-File $hostname\Windows-Features_$hostname.txt -Append}
+        {"Unable to run dism without running as admin. Consider running again with elevated admin permissions." | Out-File $outputFileName -Append}
 }
 
 # get installed hotfixes (/format:htable doesn't always work)
+$outputFileName = "$hostname\Hotfixes_$hostname.txt"
 write-host Getting installed hotfixes... -ForegroundColor Yellow
-"`nThe OS version is: " + [System.Environment]::OSVersion + ". See if this version is supported according to the following pages:" | Out-File $hostname\Hotfixes_$hostname.txt -Append
-"https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" | Out-File $hostname\Hotfixes_$hostname.txt -Append
-"https://en.wikipedia.org/wiki/Windows_10_version_history" | Out-File $hostname\Hotfixes_$hostname.txt -Append
-"https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" | Out-File $hostname\Hotfixes_$hostname.txt -Append
-"`nOutput of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" | Out-File $hostname\Hotfixes_$hostname.txt -Append
-Get-HotFix | sort InstalledOn -Descending -ErrorAction SilentlyContinue | Out-File $hostname\Hotfixes_$hostname.txt -Append
+"`nThe OS version is: " + [System.Environment]::OSVersion + ". See if this version is supported according to the following pages:" | Out-File $outputFileName -Append
+"https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" | Out-File $outputFileName -Append
+"https://en.wikipedia.org/wiki/Windows_10_version_history" | Out-File $outputFileName -Append
+"https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" | Out-File $outputFileName -Append
+"`nOutput of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" | Out-File $outputFileName -Append
+Get-HotFix | sort InstalledOn -Descending -ErrorAction SilentlyContinue | Out-File $outputFileName -Append
 <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
 if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
 {
@@ -259,11 +269,12 @@ if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
 } #>
 
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
+$outputFileName = "$hostname\Process-list_$hostname.txt"
 write-host Getting processes... -ForegroundColor Yellow
-"`nOutput of `"Get-Process`" PowerShell command:`n" | Out-File $hostname\Process-list_$hostname.txt -Append
-try {Get-Process -IncludeUserName | ft -AutoSize ProcessName, id, company, ProductVersion, username, cpu, WorkingSet | Out-String -Width 180 | Out-File $hostname\Process-list_$hostname.txt -Append}
+"`nOutput of `"Get-Process`" PowerShell command:`n" | Out-File $outputFileName -Append
+try {Get-Process -IncludeUserName | ft -AutoSize ProcessName, id, company, ProductVersion, username, cpu, WorkingSet | Out-String -Width 180 | Out-File $outputFileName -Append}
 # run without IncludeUserName if the script doesn't have elevated permissions or for old powershell versions
-catch {Get-Process | ft -AutoSize ProcessName, id, company, ProductVersion, cpu, WorkingSet | Out-String -Width 180 | Out-File $hostname\Process-list_$hostname.txt -Append}
+catch {Get-Process | ft -AutoSize ProcessName, id, company, ProductVersion, cpu, WorkingSet | Out-String -Width 180 | Out-File $outputFileName -Append}
 
 # get services
 write-host Getting services... -ForegroundColor Yellow
@@ -834,8 +845,9 @@ systeminfo >> $hostname\Systeminfo_$hostname.txt
 #########################################################
 
 $currTime = Get-Date
-"Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss")  | Out-File $hostname\Log_$hostname.txt -Append
-"Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds"  | Out-File $hostname\Log_$hostname.txt -Append
+$outputFileName = "$hostname\Log_$hostname.txt"
+"Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss")  | Out-File $outputFileName -Append
+"Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds"  | Out-File $outputFileName -Append
 
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
 try
