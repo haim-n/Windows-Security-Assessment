@@ -2,12 +2,10 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "1.3" # used for logging purposes
+$Version = "1.4" # used for logging purposes
 ##########################################################
 <# TODO:
-- Add Domain Name to the log file
-- Add "Get-MpPreference" and ASR rules
-- Get Windows Firewall config (Get-NetFirewall*)
+- Move lists to CSV format instead of TXT
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
 - Output the results to a single file with a simple table
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
@@ -90,21 +88,25 @@ Remove-Item $hostname -Recurse -ErrorAction SilentlyContinue
 New-Item $hostname -type directory -ErrorAction SilentlyContinue | Out-Null
 
 # output log
-"Script Version: $Version" | Out-File $hostname\Log_$hostname.txt
 "Computer Name: $hostname" | Out-File $hostname\Log_$hostname.txt -Append
-"Running As Admin: $runningAsAdmin" | Out-File $hostname\Log_$hostname.txt -Append
-$user = whoami
-"Running User: $user" | Out-File $hostname\Log_$hostname.txt -Append
 "Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption | Out-File $hostname\Log_$hostname.txt -Append
+$partOfDomain = (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
+"Part of Domain: $partOfDomain" | Out-File $hostname\Log_$hostname.txt -Append
+if ($partOfDomain)
+{
+    "Domain Name: " + (Get-WmiObject -class Win32_ComputerSystem).Domain | Out-File $hostname\Log_$hostname.txt -Append
+    if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
+        {"Domain Controller: True" | Out-File $hostname\Log_$hostname.txt -Append}
+    else
+        {"Domain Controller: False" | Out-File $hostname\Log_$hostname.txt -Append}    
+}
+$user = whoami
+"`nRunning User: $user" | Out-File $hostname\Log_$hostname.txt -Append
+"Running As Admin: $runningAsAdmin" | Out-File $hostname\Log_$hostname.txt -Append
 $uptimeDate = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject Win32_OperatingSystem).LastBootUpTime)
 "System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
-"Part of Domain: " + (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain | Out-File $hostname\Log_$hostname.txt -Append
-if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
-    {"Domain Controller: True" | Out-File $hostname\Log_$hostname.txt -Append}
-else
-    {"Domain Controller: False" | Out-File $hostname\Log_$hostname.txt -Append}
-
-"`nStart Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
+"Script Version: $Version" | Out-File $hostname\Log_$hostname.txt -Append
+"Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $hostname\Log_$hostname.txt -Append
 
 #########################################################
 
@@ -551,7 +553,7 @@ if ($EnableSensitiveInfoSearch)
 }
 
 # get anti-virus status
-# works only on Windows Clients, Not on Servers (2008, 2012, etc.)
+# works only on Windows Clients, Not on Servers (2008, 2012, etc.). Maybe the "Get-MpPreference" could work on servers - wasn't tested.
 if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
 {
     write-host Getting Anti-Virus status... -ForegroundColor Yellow
@@ -596,7 +598,7 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
     "`n============= Anti-Spyware Products Status (Raw Data) =============" | Out-File $hostname\AntiVirus_$hostname.txt -Append
     $AntiSpywareProducts | Out-File $hostname\AntiVirus_$hostname.txt -Append
     # check Windows Defender settings
-    "`n============= Windows Defender Settings Status =============" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+    "`n============= Windows Defender Settings Status =============`n" | Out-File $hostname\AntiVirus_$hostname.txt -Append
     $WinDefenderSettings = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager"
     switch ($WinDefenderSettings.AllowRealtimeMonitoring)
     {
@@ -611,8 +613,32 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
         1 {"Windows Defender Network Protection is on." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
         2 {"Windows Defender Network Protection is set to audit mode." | Out-File $hostname\AntiVirus_$hostname.txt -Append}
     }
-    "`nBelow are all the values under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager:" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+    "`n---------------------------------" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+    "`nValues under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager:" | Out-File $hostname\AntiVirus_$hostname.txt -Append
      $WinDefenderSettings | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     "`n---------------------------------" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     "`nOutput of Get-MpPreference:" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     $MpPreference = Get-MpPreference
+     $MpPreference | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     "`n---------------------------------" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     "`nAttack Surface Reduction Rules Ids:" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     $MpPreference.AttackSurfaceReductionRules_Ids | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     "`nAttack Surface Reduction Rules Actions:" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     $MpPreference.AttackSurfaceReductionRules_Actions | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     "`nAttack Surface Reduction Only Exclusions:" | Out-File $hostname\AntiVirus_$hostname.txt -Append
+     $MpPreference.AttackSurfaceReductionOnlyExclusions | Out-File $hostname\AntiVirus_$hostname.txt -Append
+}
+
+# get Windows Firewall configuration
+# The NetFirewall commands are supported from Windows 8/2012 (version 6.2)
+if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
+{
+    write-host Getting Windows Firewall configuration... -ForegroundColor Yellow
+    "The output of Get-NetFirewallProfile is:`n" | Out-File $hostname\Windows-Firewall_$hostname.txt -Append
+    Get-NetFirewallProfile | ft | Out-File -Width 400 $hostname\Windows-Firewall_$hostname.txt -Append    
+    "`n----------------------------------`n" | Out-File $hostname\Windows-Firewall_$hostname.txt -Append    
+    Get-NetFirewallRule | Export-Csv $hostname\Windows-Firewall_Rules_$hostname.csv -NoTypeInformation
+    "The output of Get-NetFirewallRule can be found in the Windows-Firewall_Rules CSV file." | Out-File $hostname\Windows-Firewall_$hostname.txt -Append
 }
 
 # check if LLMNR and NETBIOS-NS are enabled
@@ -701,32 +727,32 @@ $SessionRegValue | Out-File $hostname\NetSession_$hostname.txt -Append
 
 # check for SAM enumeration permissions
 write-host Getting SAM enumeration configuration... -ForegroundColor Yellow
-"============= Remote SAM (SAMR) Configuration =============" | Out-File $hostname\SAM_Enumeration_$hostname.txt
-"`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
-"However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
-"These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
-"The newer OS versions are also recommended to be configured with the policy, , though it is not essential." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
-"`nSee more details here:" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
-"https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-access-restrict-clients-allowed-to-make-remote-sam-calls" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
-"https://blog.stealthbits.com/making-internal-reconnaissance-harder-using-netcease-and-samri1o" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
-"`n----------------------------------------------------" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+"============= Remote SAM (SAMR) Configuration =============" | Out-File $hostname\SAM-Enumeration_$hostname.txt
+"`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
+"However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
+"These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
+"The newer OS versions are also recommended to be configured with the policy, , though it is not essential." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
+"`nSee more details here:" | Out-File $hostname\SAM0Enumeration_$hostname.txt -Append
+"https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-access-restrict-clients-allowed-to-make-remote-sam-calls" | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
+"https://blog.stealthbits.com/making-internal-reconnaissance-harder-using-netcease-and-samri1o" | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
+"`n----------------------------------------------------" | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
 
 $RestrictRemoteSAM = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa RestrictRemoteSAM -ErrorAction SilentlyContinue
 if ($RestrictRemoteSAM -eq $null)
 {
-    "`nThe 'RestrictRemoteSAM' registry value was not found. SAM enumeration permissions are configured as the default for the OS version, which is $winVersion." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+    "`nThe 'RestrictRemoteSAM' registry value was not found. SAM enumeration permissions are configured as the default for the OS version, which is $winVersion." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
     if (($winVersion.Major -ge 10) -and ($winVersion.Build -ge 14393))
-        {"This OS version is hardened by default." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append}
+        {"This OS version is hardened by default." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append}
     else
-        {"This OS version is non hardened by default and this issue can be seen as a finding." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append}
+        {"This OS version is non hardened by default and this issue can be seen as a finding." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append}
 }
 else
 {
     $RestrictRemoteSAMValue = $RestrictRemoteSAM.RestrictRemoteSAM
-    "`nThe 'RestrictRemoteSAM' registry value is set to: $RestrictRemoteSAMValue" | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+    "`nThe 'RestrictRemoteSAM' registry value is set to: $RestrictRemoteSAMValue" | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
     $RestrictRemoteSAMPermissions = ConvertFrom-SDDLString -Sddl $RestrictRemoteSAMValue
-    "`nBelow are the permissions for SAM enumeration. Make sure that only Administrators are granted Read permissions." | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
-    $RestrictRemoteSAMPermissions | Out-File $hostname\SAM_Enumeration_$hostname.txt -Append
+    "`nBelow are the permissions for SAM enumeration. Make sure that only Administrators are granted Read permissions." | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
+    $RestrictRemoteSAMPermissions | Out-File $hostname\SAM-Enumeration_$hostname.txt -Append
 }
 
 
@@ -767,7 +793,7 @@ if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.M
     }    
 }
 # use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin
-if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 2))) # version should be 7+ or 6.2+
+if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
 {    
     "`n============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature | ft =============" | Out-File $hostname\PowerShell-Versions_$hostname.txt -Append
     if ($runningAsAdmin)
@@ -807,7 +833,7 @@ systeminfo >> $hostname\Systeminfo_$hostname.txt
 #########################################################
 
 $currTime = Get-Date
-"`nEnd Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss")  | Out-File $hostname\Log_$hostname.txt -Append
+"Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss")  | Out-File $hostname\Log_$hostname.txt -Append
 "Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds"  | Out-File $hostname\Log_$hostname.txt -Append
 
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
