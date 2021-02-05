@@ -5,7 +5,7 @@
 $Version = "1.3" # used for logging purposes
 ##########################################################
 <# TODO:
-- Add Domain Name to log file
+- Add Domain Name to the log file
 - Add "Get-MpPreference" and ASR rules
 - Get Windows Firewall config (Get-NetFirewall*)
 - Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
