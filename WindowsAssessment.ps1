@@ -2,28 +2,32 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "1.4" # used for logging purposes
+$Version = "1.5" # used for logging purposes
 ##########################################################
 <# TODO:
-- Change methodology for outputting to file - always output to $outputfilename, define it at the beginning of every operation
 - Output the results to a single file with a simple table
-- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
-- Check NTLM registry key
-- Test the SMB1 registry check
-- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
-- Determine if PowerShell logging is enabled (based on registry)
+- Debug the SMB1 registry check
 - Debug the FirewallProducts check
+- Determine more stuff that are found only in the Security-Policy/GPResult files:
+-- Check NTLM registry key
+-- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
+-- Determine if PowerShell logging is enabled (based on registry)
+-- Check Kerberos encryption algorithms
+-- Determine if local users can connect over the network ("Deny access to this computer from the network")
+-- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
+-- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check for additional checks from windows_hardening.cmd script
 - Check Macro and DDE (OLE) settings
 - Check event log size settings
 - Check if Internet sites are accessible (ports 80/443 test, curl/wget, use proxy configuration, etc.)
+- Check if internet DNS servers (8.8.8.8, etc.) are accessible
 - Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
 - Check for Windows Update / WSUS settings
 - Check for Device Control (GPO or dedicated software)
 - Find misconfigured services which allow elevation of privileges
-- Add More settings from hardening docs or PT mitigations
+- Add More settings from hardening docs
 - Log the time of each operation to the log file (create a function for it and reuse)
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 - Change script structure to functions
@@ -40,7 +44,7 @@ Controls Checklist:
 - NETBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
 - WDigest is disabled (WDigest file)
 - Net Session permissions are hardened (NetSession file)
-- SAM enumeration permissions are hardened (Security-Policy inf file: Network access: Restrict clients allowed to make remote calls to SAM, admin needed)
+- SAM enumeration permissions are hardened (SAM-Enumeration file)
 - RDP timeout for disconnected sessions is configured (RDP file)
 - RDP NLA is required (RDP file)
 - PowerShell v2 is uninstalled (PowerShellv2 file, and/or Windows-Features file: PowerShell-V2 feature)
