@@ -2,11 +2,10 @@
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 # add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "1.5" # used for logging purposes
+$Version = "1.6" # used for logging purposes
 ##########################################################
 <# TODO:
 - Output the results to a single file with a simple table
-- Debug the SMB1 registry check
 - Debug the FirewallProducts check
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
@@ -19,9 +18,9 @@ $Version = "1.5" # used for logging purposes
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
-- Check for additional checks from windows_hardening.cmd script
-- Check Macro and DDE (OLE) settings
 - Check event log size settings
+- Check Macro and DDE (OLE) settings
+- Look for additional checks from windows_hardening.cmd script
 - Check if Internet sites are accessible (ports 80/443 test, curl/wget, use proxy configuration, etc.)
 - Check if internet DNS servers (8.8.8.8, etc.) are accessible
 - Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
@@ -390,14 +389,25 @@ if ($winVersion.Major -ge 6)
 {
     $SMB1 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB1 -ErrorAction SilentlyContinue
     $SMB2 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB2 -ErrorAction SilentlyContinue
+    $smbServerConfig = Get-SmbServerConfiguration
+    $smbClientConfig = Get-SmbClientConfiguration
     if ($SMB1.SMB1 -eq 0)
-        {"SMB1 Server is not supported. Which is nice." | Out-File $outputFileName -Append}
+        {"SMB1 Server is not supported (based on registry values). Which is nice." | Out-File $outputFileName -Append}
     else
-        {"SMB1 Server is supported. Which is pretty bad and certainly a finding." | Out-File $outputFileName -Append}
+        {"SMB1 Server is supported (based on registry values). Which is pretty bad and a finding." | Out-File $outputFileName -Append}
+    if (!$smbConfig.EnableSMB1Protocol)
+        {"SMB1 Server is not supported (based on Get-SmbServerConfiguration). Which is nice." | Out-File $outputFileName -Append}
+    else
+        {"SMB1 Server is supported (based on Get-SmbServerConfiguration). Which is pretty bad and a finding." | Out-File $outputFileName -Append}
+    "---------------------------------------" | Out-File $outputFileName -Append
     if ($SMB2.SMB2 -eq 0)
-        {"SMB2 and SMB3 Server are not supported. Which is weird, but not a finding." | Out-File $outputFileName -Append}
+        {"SMB2 and SMB3 Server are not supported (based on registry values). Which is weird, but not a finding." | Out-File $outputFileName -Append}
     else
-        {"SMB2 and SMB3 Server are supported. Which is OK." | Out-File $outputFileName -Append}
+        {"SMB2 and SMB3 Server are supported (based on registry values). Which is OK." | Out-File $outputFileName -Append}
+    if (!$smbServerConfig.EnableSMB2Protocol)
+        {"SMB2 Server is not supported (based on Get-SmbServerConfiguration). Which is weird, but not a finding." | Out-File $outputFileName -Append}
+    else
+        {"SMB2 Server is supported (based on Get-SmbServerConfiguration). Which is OK." | Out-File $outputFileName -Append}
 }
 else
 {
@@ -444,6 +454,13 @@ else
         "SMB signing is disabled by the server. Clients of this server are susceptible to man-in-the-middle attacks. A finding." | Out-File $outputFileName -Append
     }
 }
+# potentially, we can also check SMB signing configuration using PowerShell:
+<#if ($smbServerConfig -ne $null)
+{
+    "---------------------------------------" | Out-File $outputFileName -Append
+    "Get-SmbServerConfiguration SMB server-side signing details:" | Out-File $outputFileName -Append
+    $smbServerConfig | fl *sign* | Out-File $outputFileName -Append
+}#>
 "`n============= SMB Signing (Client Settings) =============" | Out-File $outputFileName -Append
 $SmbClientRequireSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters RequireSecuritySignature
 $SmbClientSupportSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters EnableSecuritySignature
@@ -467,7 +484,16 @@ else
         "SMB signing is disabled by the client. This computer is susceptible to man-in-the-middle attacks. A finding." | Out-File $outputFileName -Append
     }
 }
-
+if (($smbServerConfig -ne $null) -and ($smbClientConfig -ne $null)) {
+    # potentially, we can also check SMB signing configuration using PowerShell:
+    <#"---------------------------------------" | Out-File $outputFileName -Append
+    "Get-SmbClientConfiguration SMB client-side signing details:" | Out-File $outputFileName -Append
+    $smbClientConfig | fl *sign* | Out-File $outputFileName -Append #>
+    "`n============= Raw Data - Get-SmbServerConfiguration =============" | Out-File $outputFileName -Append
+    $smbServerConfig | Out-File $outputFileName -Append
+    "`n============= Raw Data - Get-SmbClientConfiguration =============" | Out-File $outputFileName -Append
+    $smbClientConfig | Out-File $outputFileName -Append
+}
 
 # Getting RDP security settings
 Write-Host Getting RDP security settings... -ForegroundColor Yellow
