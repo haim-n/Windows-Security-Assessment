@@ -7,4 +7,4 @@ Preferably, should be run with elevated admin privileges.
 
 Performs only non-intrusive passive checks.
 
-Supports all Windows versions.
+Supports all Windows versions with PowerShell (2003/XP and above).
