@@ -1,8 +1,7 @@
-﻿param ([Switch]$EnableSensitiveInfoSearch = $false, [Switch]$RunPowerShellv2TestCommand = $false, [Switch]$RunPowerShellv5TestCommand = $false)
+param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
-# add the "RunPowerShellv2/5TestCommand" flag to run test command to ensure if PSv2/PSv5 are installed. Will present errors if the PS version is not installed.
 
-$Version = "1.6" # used for logging purposes
+$Version = "1.7" # used for logging purposes
 ##########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -821,27 +820,35 @@ $outputFileName = "$hostname\PowerShell-Versions_$hostname.txt"
 "PowerShell 1/2 are legacy versions which don't support logging and AMSI." | Out-File $outputFileName -Append
 "It's recommended to uninstall legacy PowerShell versions and make sure that only PowerShell 5+ is installed." | Out-File $outputFileName -Append
 "See the following article for details on PowerShell downgrade attacks: https://www.leeholmes.com/blog/2017/03/17/detecting-and-preventing-powershell-downgrade-attacks" | Out-File $outputFileName -Append
-
 "`nThis script is running on PowerShell version " + $PSVersionTable.PSVersion.ToString() | Out-File $outputFileName -Append
-# if the flag is enabled, run test commands to make sure whether PSv2 is installed. May cause execptions when PSv2 is not supported. Try-catch doesn't help since the error is outside PowerShell.
-if ($RunPowerShellv2TestCommand)
+# Checking if PowerShell Version 2/5 are installed, by trying to run command (Get-Host) with PowerShellv2 and v5 Engine.
+"`n============= Running Test Commands =============" | Out-File $outputFileName -Append
+try
 {
-    "`n============= Running Test Commands on PowerShell v2 =============" | Out-File $outputFileName -Append
-    $PowerShellv2Check = powershell -version 2 -command get-host
-    if ($PowerShellv2Check -ne $null)
-        {"PowerShell version " + $PowerShellv2Check[3].split(":")[1].substring(1) + " is installed and was able to run commands." | Out-File $outputFileName -Append}
-    else
-        {"PowerShell version 2 was not able to run." | Out-File $outputFileName -Append}
+    $temp = Start-Job {Get-Host} -PSVersion 2.0 -Name "PSv2Check"
+    "PowerShell version 2 is installed and was able to run commands. This is a finding!" | Out-File $outputFileName -Append
+}
+catch
+{
+    "PowerShell version 2 was not able to run. This is secure." | Out-File $outputFileName -Append
+}
+finally
+{
+    Get-Job | Remove-Job -Force
 }
 # same as above, for PSv5
-if ($RunPowerShellv5TestCommand)
+try
 {
-    "`n============= Running Test Commands on PowerShell v5 =============" | Out-File $outputFileName -Append
-    $PowerShellv5Check = powershell -version 5 -command get-host
-    if ($PowerShellv5Check -ne $null)
-        {"PowerShell version " + $PowerShellv5Check[3].split(":")[1].substring(1) + " is installed and was able to run commands." | Out-File $outputFileName -Append}
-    else
-        {"PowerShell version 5 was not able to run." | Out-File $outputFileName -Append}
+    $temp = Start-Job {Get-Host} -PSVersion 5.0 -Name "PSv5Check"
+    "PowerShell version 5 is installed and was able to run commands." | Out-File $outputFileName -Append
+}
+catch
+{
+    "PowerShell version 5 was not able to run." | Out-File $outputFileName -Append
+}
+finally
+{
+    Get-Job | Remove-Job -Force
 }
 # use Get-WindowsFeature if running on Windows SERVER 2008R2 or above
 if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 1))) # version should be 7+ or 6.1+
@@ -855,7 +862,7 @@ if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.M
 # use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin
 if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
 {    
-    "`n============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature | ft =============" | Out-File $outputFileName -Append
+    "`n============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature =============" | Out-File $outputFileName -Append
     if ($runningAsAdmin)
     {
         Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShell* | ft DisplayName, State -AutoSize | Out-File $outputFileName -Append
@@ -872,11 +879,11 @@ if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.M
 $LegacyPowerShell = Get-ItemProperty "HKLM:\Software\Microsoft\PowerShell\1\PowerShellEngine" PowerShellVersion -ErrorAction SilentlyContinue
 if (($LegacyPowerShell.PowerShellVersion -eq "2.0") -or ($LegacyPowerShell.PowerShellVersion -eq "1.0"))
 {
-    "`nPowerShell version " + $LegacyPowerShell.PowerShellVersion + " is installed." | Out-File $outputFileName -Append
+    "PowerShell version " + $LegacyPowerShell.PowerShellVersion + " is installed, based on the registry value mentioned above." | Out-File $outputFileName -Append
 }
 else
 {
-    "`nPowerShell version 1/2 is not installed." | Out-File $outputFileName -Append
+    "PowerShell version 1/2 is not installed." | Out-File $outputFileName -Append
 }
 
 # get various system info (can take a few seconds)
