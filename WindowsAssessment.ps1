@@ -5,6 +5,7 @@ $Version = "1.7" # used for logging purposes
 ##########################################################
 <# TODO:
 - Output the results to a single file with a simple table
+- Add Defender AV Tamper Protection check with Get-MpComputerStatus | fl *tamper*
 - Debug the FirewallProducts check
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
