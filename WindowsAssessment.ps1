@@ -7,6 +7,7 @@ $Version = "1.7" # used for logging purposes
 - Output the results to a single file with a simple table
 - Add Defender AV Tamper Protection check with Get-MpComputerStatus | fl *tamper*
 - Debug the FirewallProducts check
+- Simplify the net session check by coping from Get-NetSessionEnumPermission
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
 -- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
