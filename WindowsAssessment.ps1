@@ -691,7 +691,7 @@ if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.M
 {
     Write-Host Getting Windows Firewall configuration... -ForegroundColor Yellow
     "The output of Get-NetFirewallProfile is:`n" | Out-File $outputFileName -Append
-    Get-NetFirewallProfile | ft | Out-File -Width 400 $hostname\Windows-Firewall_$hostname.txt -Append    
+    Get-NetFirewallProfile | Out-File $hostname\Windows-Firewall_$hostname.txt -Append    
     "`n----------------------------------`n" | Out-File $outputFileName -Append    
     "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file." | Out-File $outputFileName -Append
     Get-NetFirewallRule | Export-Csv $hostname\Windows-Firewall-Rules_$hostname.csv -NoTypeInformation
