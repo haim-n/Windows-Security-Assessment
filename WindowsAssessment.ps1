@@ -1,13 +1,13 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.7" # used for logging purposes
+$Version = "1.8" # used for logging purposes
 ##########################################################
 <# TODO:
 - Output the results to a single file with a simple table
-- Add Defender AV Tamper Protection check with Get-MpComputerStatus | fl *tamper*
 - Debug the FirewallProducts check
 - Simplify the net session check by coping from Get-NetSessionEnumPermission
+- Debug potential Win10 issues with "Get-WmiObject -class Win32_TSGeneralSetting" and "Get-CimInstance –ClassName Win32_DeviceGuard"
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
 -- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
@@ -18,11 +18,12 @@ $Version = "1.7" # used for logging purposes
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Test on Windows 2008
+- Check AV/Defender configuration also on non-Windows 10
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check event log size settings
 - Check Macro and DDE (OLE) settings
-- Look for additional checks from windows_hardening.cmd script
+- Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Check if Internet sites are accessible (ports 80/443 test, curl/wget, use proxy configuration, etc.)
 - Check if internet DNS servers (8.8.8.8, etc.) are accessible
 - Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
@@ -37,8 +38,8 @@ $Version = "1.7" # used for logging purposes
 ##########################################################
 Controls Checklist:
 - OS is up to date (hotfixes file shows recent updates)
-- LSA Protection is enabled (LSA-Protection file)
-- Credential guard is running (Credential-Guard file)
+- LSA Protection is enabled (LSA-Protection file, Win 8.1/2012R2 and above)
+- Credential guard is running (Credential-Guard file, Win 10/2016 and above)
 - SMB Signing is enforced (SMB file)
 - SMB1 Server is not installed (SMB file)
 - NTLMv2 is enforced  (Security-Policy inf file: Network security: LAN Manager authentication level, admin needed)
@@ -673,9 +674,17 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
     "`nValues under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager:" | Out-File $outputFileName -Append
      $WinDefenderSettings | Out-File $outputFileName -Append
      "`n---------------------------------" | Out-File $outputFileName -Append
-     "`nOutput of Get-MpPreference:" | Out-File $outputFileName -Append
+     "`nRaw output of Get-MpPreference (Defender settings):" | Out-File $outputFileName -Append
      $MpPreference = Get-MpPreference
      $MpPreference | Out-File $outputFileName -Append
+     "`n---------------------------------" | Out-File $outputFileName -Append
+     $MpComputerStatus = Get-MpComputerStatus
+     "`nEnabled Defender features:" | Out-File $outputFileName -Append
+     $MpComputerStatus | fl *enabled* | Out-File $outputFileName -Append
+     "`nDefender Tamper Protection:" | Out-File $outputFileName -Append
+     $MpComputerStatus | fl *tamper* | Out-File $outputFileName -Append
+     "`nRaw output of Get-MpComputerStatus:" | Out-File $outputFileName -Append
+     $MpComputerStatus | Out-File $outputFileName -Append
      "`n---------------------------------" | Out-File $outputFileName -Append
      "`nAttack Surface Reduction Rules Ids:" | Out-File $outputFileName -Append
      $MpPreference.AttackSurfaceReductionRules_Ids | Out-File $outputFileName -Append
