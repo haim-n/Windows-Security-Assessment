@@ -2,7 +2,7 @@ param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
 $Version = "1.8" # used for logging purposes
-##########################################################
+###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
 - Debug the FirewallProducts check
