@@ -1,13 +1,13 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.8" # used for logging purposes
+$Version = "1.9" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
 - Debug the FirewallProducts check
 - Simplify the net session check by coping from Get-NetSessionEnumPermission
-- Debug potential Win10 issues with "Get-WmiObject -class Win32_TSGeneralSetting" and "Get-CimInstance –ClassName Win32_DeviceGuard"
+- Debug potential issue with Credential Guard WMI check
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
 -- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
@@ -501,22 +501,23 @@ if (($smbServerConfig -ne $null) -and ($smbClientConfig -ne $null)) {
 # Getting RDP security settings
 Write-Host Getting RDP security settings... -ForegroundColor Yellow
 $outputFileName = "$hostname\RDP_$hostname.txt"
-"============= Raw RDP Settings =============" | Out-File $outputFileName -Append
-$RDP = Get-WmiObject -class Win32_TSGeneralSetting -Namespace root\cimv2\terminalservices -Filter “TerminalName='RDP-tcp'” 
+"============= Raw RDP Settings (from WMI) =============" | Out-File $outputFileName -Append
+$WMIFilter = "TerminalName='RDP-tcp'" # there might be issues with the quotation marks - to debug
+$RDP = Get-WmiObject -class Win32_TSGeneralSetting -Namespace root\cimv2\terminalservices -Filter $WMIFilter
 $RDP | fl Terminal*,*Encrypt*, Policy*,Security*,SSL*,*Auth* | Out-File $outputFileName -Append
 "`n============= NLA (Network Level Authentication) =============" | Out-File $outputFileName -Append
 if ($RDP.UserAuthenticationRequired -eq 1)
     {"NLA is required, which is fine." | Out-File $outputFileName -Append}
 if ($RDP.UserAuthenticationRequired -eq 0)
-    {"NLA is not required, which is bad. A finding." | Out-File $outputFileName -Append}
+    {"NLA is not required, which is bad. A possible finding." | Out-File $outputFileName -Append}
 "`n============= Security Layer (SSL/TLS) =============" | Out-File $outputFileName -Append
 if ($RDP.SecurityLayer -eq 0)
-    {"Native RDP encryption is used instead of SSL/TLS. Which is bad. A finding." | Out-File $outputFileName -Append}
+    {"Native RDP encryption is used instead of SSL/TLS, which is bad. A possible finding." | Out-File $outputFileName -Append}
 if ($RDP.SecurityLayer -eq 1)
     {"SSL/TLS is supported, but not required ('Negotiate' setting). Which is not recommended, but not necessary a finding." | Out-File $outputFileName -Append}
 if ($RDP.SecurityLayer -eq 2)
     {"SSL/TLS is required for connecting. Which is good." | Out-File $outputFileName -Append}
-"`n============= Raw RDP Timeout Settings =============" | Out-File $outputFileName -Append
+"`n============= Raw RDP Timeout Settings (from Registry) =============" | Out-File $outputFileName -Append
 $RDPTimeout = Get-Item "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" 
 if ($RDPTimeout.ValueCount -eq 0)
     {"RDP timeout is not configured. A possible finding." | Out-File $outputFileName -Append}
@@ -537,12 +538,16 @@ $outputFileName = "$hostname\Credential-Guard_$hostname.txt"
 if ($winVersion.Major -ge 10)
 {
     Write-Host Getting credential guard settings... -ForegroundColor Yellow
-    $DevGuard = Get-CimInstance –ClassName Win32_DeviceGuard –Namespace root\Microsoft\Windows\DeviceGuard
+    $DevGuard = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard
     "============= Credential Guard Settings from WMI =============" | Out-File $outputFileName -Append
-    if (($DevGuard.SecurityServicesConfigured -contains 1) -and ($DevGuard.SecurityServicesRunning -contains 1))
+    if ($DevGuard.SecurityServicesConfigured -eq $null)
+        {"The WMI query for Device Guard settings has failed. Status unknown." | Out-File $outputFileName -Append}
+    else {
+        if (($DevGuard.SecurityServicesConfigured -contains 1) -and ($DevGuard.SecurityServicesRunning -contains 1))
         {"Credential Guard is configured and running. Which is good." | Out-File $outputFileName -Append}
     else
-        {"Credential Guard is turned off. A possible finding." | Out-File $outputFileName -Append}
+        {"Credential Guard is turned off. A possible finding." | Out-File $outputFileName -Append}    
+    }
     "`n============= Raw Device Guard Settings from WMI (Including Credential Guard) =============" | Out-File $outputFileName -Append
     $DevGuard | Out-File $outputFileName -Append
     $DevGuardPS = Get-ComputerInfo dev*
