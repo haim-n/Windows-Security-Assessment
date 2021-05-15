@@ -1,13 +1,12 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.9" # used for logging purposes
+$Version = "1.10" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
 - Debug the FirewallProducts check
-- Simplify the net session check by coping from Get-NetSessionEnumPermission
-- Debug potential issue with Credential Guard WMI check
+- Check for Windows Update / WSUS settings, check for WSUS over HTTP
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
 -- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
@@ -27,7 +26,6 @@ $Version = "1.9" # used for logging purposes
 - Check if Internet sites are accessible (ports 80/443 test, curl/wget, use proxy configuration, etc.)
 - Check if internet DNS servers (8.8.8.8, etc.) are accessible
 - Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
-- Check for Windows Update / WSUS settings
 - Check for Device Control (GPO or dedicated software)
 - Find misconfigured services which allow elevation of privileges
 - Add More settings from hardening docs
@@ -780,23 +778,27 @@ else
         {"`nWDigest stores cleartext user credentials in memory, which is bad and a possible finding." | Out-File $outputFileName -Append}
 }
 
-
 # check for Net Session enumeration permissions
 write-host Getting NetSession configuration... -ForegroundColor Yellow
 $outputFileName = "$hostname\NetSession_$hostname.txt"
-"============= NetSession Configuration =============" | Out-File $outputFileName
-"`nBy default, on Windows 2016 (and below) and old builds of Windows 10, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $outputFileName -Append
+"============= NetSession Configuration =============" | Out-File $outputFileName -Append
+"By default, on Windows 2016 (and below) and old builds of Windows 10, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $outputFileName -Append
 "`nSee more details here:" | Out-File $outputFileName -Append
 "https://gallery.technet.microsoft.com/Net-Cease-Blocking-Net-1e8dcb5b" | Out-File $outputFileName -Append
 "https://www.powershellgallery.com/packages/NetCease/1.0.3" | Out-File $outputFileName -Append
-"`nDedicated script for parsing the current permissions can be found here:" | Out-File $outputFileName -Append
-"https://gallery.technet.microsoft.com/scriptcenter/View-Net-Session-Enum-dfced139" | Out-File $outputFileName -Append
-"`nFor comparison, below are the beggining of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:" | Out-File $outputFileName -Append
+"`n--------- Security Descriptor Check ---------" | Out-File $outputFileName -Append
+# copied from Get-NetSessionEnumPermission
+"Below are the permissions granted to enumerate net sessions." | Out-File $outputFileName -Append
+"If the Authenticated Users group has permissions, this is a finding.`n" | Out-File $outputFileName -Append
+$SessionRegValue = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo
+$SecurityDesc = New-Object -TypeName System.Security.AccessControl.CommonSecurityDescriptor -ArgumentList ($true,$false,$SessionRegValue,0)
+$SecurityDesc.DiscretionaryAcl | ForEach-Object {$_ | Add-Member -MemberType ScriptProperty -Name TranslatedSID -Value ({$this.SecurityIdentifier.Translate([System.Security.Principal.NTAccount]).Value}) -PassThru} | Out-File $outputFileName -Append
+"`n--------- Raw Registry Value Check ---------" | Out-File $outputFileName -Append
+"For comparison, below are the beggining of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:" | Out-File $outputFileName -Append
 "Default value for Windows 2019 and newer builds of Windows 10 (hardened): 1,0,4,128,160,0,0,0,172" | Out-File $outputFileName -Append
 "Default value for Windows 2016, older builds of Windows 10 and older OS versions (not secure - finding): 1,0,4,128,120,0,0,0,132" | Out-File $outputFileName -Append
 "Value after running NetCease (hardened): 1,0,4,128,20,0,0,0,32" | Out-File $outputFileName -Append
 "`nThe SrvsvcSessionInfo registry value under HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity is set to:" | Out-File $outputFileName -Append
-$SessionRegValue = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo
 $SessionRegValue | Out-File $outputFileName -Append
 
 # check for SAM enumeration permissions
