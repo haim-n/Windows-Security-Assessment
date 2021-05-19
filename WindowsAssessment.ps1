@@ -7,6 +7,7 @@ $Version = "1.10" # used for logging purposes
 - Output the results to a single file with a simple table
 - Debug the FirewallProducts check
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP
+- Debug the RDP check on multiple OS versions
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
 -- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
@@ -23,7 +24,7 @@ $Version = "1.10" # used for logging purposes
 - Check event log size settings
 - Check Macro and DDE (OLE) settings
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
-- Check if Internet sites are accessible (ports 80/443 test, curl/wget, use proxy configuration, etc.)
+- Enhance internet connectivity checks (curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
 - Check if internet DNS servers (8.8.8.8, etc.) are accessible
 - Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
 - Check for Device Control (GPO or dedicated software)
@@ -56,10 +57,12 @@ Controls Checklist:
 - Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing, admin needed)
 - Credential delegation is not configured or disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
 - Local administrators group is configured as a restricted group with fixed members (Security-Policy inf file: Restricted Groups, admin needed)
+- Access to SCCM server configured with encrypted HTTPS (gpresult file: Windows Components> Windows Update > Specify intranet Microsoft update service location)
 - Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache, admin needed)
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
 - Antivirus is running and updated, advanced Windows Defender features are utilized (AntiVirus file)
 - Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch, admin needed)
+- Service Accounts cannot login interactively (Security-Policy inf file: Deny log on locally/remote, admin needed)
 - Local and domain password policies are sufficient (AccountPolicy file)
 - No overly permissive shares exists (Shares file)
 - No clear-text passwords are stored in files (Sensitive-Info file - if the EnableSensitiveInfoSearch was set)
@@ -808,7 +811,7 @@ $outputFileName = "$hostname\SAM-Enumeration_$hostname.txt"
 "`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups." | Out-File $outputFileName -Append
 "However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $outputFileName -Append
 "These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'." | Out-File $outputFileName -Append
-"The newer OS versions are also recommended to be configured with the policy, , though it is not essential." | Out-File $outputFileName -Append
+"The newer OS versions are also recommended to be configured with the policy, though it is not essential." | Out-File $outputFileName -Append
 "`nSee more details here:" | Out-File $outputFileName -Append
 "https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-access-restrict-clients-allowed-to-make-remote-sam-calls" | Out-File $outputFileName -Append
 "https://blog.stealthbits.com/making-internal-reconnaissance-harder-using-netcease-and-samri1o" | Out-File $outputFileName -Append
