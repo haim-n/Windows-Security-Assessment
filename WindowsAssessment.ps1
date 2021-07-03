@@ -5,6 +5,7 @@ $Version = "1.10" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
+- Check for "Always install with elevated privileges"
 - Debug the FirewallProducts check
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP
 - Debug the RDP check on multiple OS versions
@@ -26,7 +27,7 @@ $Version = "1.10" # used for logging purposes
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Enhance internet connectivity checks (curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
 - Check if internet DNS servers (8.8.8.8, etc.) are accessible
-- Check for Lock with screen saver after time-out (User Configuration\Policies\Administrative Templates\Control Panel\Personalization\...)
+- Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
 - Check for Device Control (GPO or dedicated software)
 - Find misconfigured services which allow elevation of privileges
 - Add More settings from hardening docs
