@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.11" # used for logging purposes
+$Version = "1.12" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -26,7 +26,8 @@ $Version = "1.11" # used for logging purposes
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check event log size settings
 - Check Macro and DDE (OLE) settings
-- Safe mode access by non-admins is blocked (based on SafeModeBlockNonAdmins reg value)
+- Check if safe mode access by non-admins is blocked (based on SafeModeBlockNonAdmins reg value)
+- Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Enhance internet connectivity checks (curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
 - Check if internet DNS servers (8.8.8.8, etc.) are accessible
@@ -69,7 +70,6 @@ Controls Checklist:
 - Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch, admin needed)
 - Service Accounts cannot login interactively (Security-Policy inf file: Deny log on locally/remote, admin needed)
 - Local and domain password policies are sufficient (AccountPolicy file)
-- Ability to enable hostspot is blocked ("Internet Connection Sharing (ICS)" service is in "Disabled" mode rather then "Manual"
 - No overly permissive shares exists (Shares file)
 - No clear-text passwords are stored in files (Sensitive-Info file - if the EnableSensitiveInfoSearch was set)
 - Reasonable number or users/groups have local admin permissions (Local-Users file)
