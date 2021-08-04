@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.10" # used for logging purposes
+$Version = "1.11" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -18,17 +18,20 @@ $Version = "1.10" # used for logging purposes
 -- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
+- Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or IPv4 is prefered
 - Test on Windows 2008
 - Check AV/Defender configuration also on non-Windows 10
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check event log size settings
 - Check Macro and DDE (OLE) settings
+- Safe mode access by non-admins is blocked (based on SafeModeBlockNonAdmins reg value)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Enhance internet connectivity checks (curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
 - Check if internet DNS servers (8.8.8.8, etc.) are accessible
 - Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
 - Check for Device Control (GPO or dedicated software)
+- Check ability to connect to Wi-Fi while connected to wired (Interface settings \ Disable Upon Wired Connect)
 - Find misconfigured services which allow elevation of privileges
 - Add More settings from hardening docs
 - Log the time of each operation to the log file (create a function for it and reuse)
@@ -65,6 +68,7 @@ Controls Checklist:
 - Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch, admin needed)
 - Service Accounts cannot login interactively (Security-Policy inf file: Deny log on locally/remote, admin needed)
 - Local and domain password policies are sufficient (AccountPolicy file)
+- Ability to enable hostspot is blocked ("Internet Connection Sharing (ICS)" service is in "Disabled" mode rather then "Manual"
 - No overly permissive shares exists (Shares file)
 - No clear-text passwords are stored in files (Sensitive-Info file - if the EnableSensitiveInfoSearch was set)
 - Reasonable number or users/groups have local admin permissions (Local-Users file)
