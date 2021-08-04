@@ -19,6 +19,7 @@ $Version = "1.11" # used for logging purposes
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or IPv4 is prefered
+- Add WPAD check
 - Test on Windows 2008
 - Check AV/Defender configuration also on non-Windows 10
 - Move lists to CSV format instead of TXT
