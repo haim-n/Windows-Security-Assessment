@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.12" # used for logging purposes
+$Version = "1.13" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -766,10 +766,10 @@ $outputFileName = "$hostname\WDigest_$hostname.txt"
 $WDigest = Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" UseLogonCredential -ErrorAction SilentlyContinue
 if ($WDigest -eq $null)
 {
-    "`nWDigest UseLogonCredential registry key wasn't found." | Out-File $outputFileName -Append
+    "`nWDigest UseLogonCredential registry value wasn't found." | Out-File $outputFileName -Append
     # check if running on Windows 6.3 or above
     if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
-        {"`nThe WDigest UseLogonCredential is turned off by default for Win8.1/2012R2 and above. It's OK." | Out-File $outputFileName -Append}
+        {"`nThe WDigest protocol is turned off by default for Win8.1/2012R2 and above. So it is OK, but still recommended to set the UseLogonCredential registry value to 0, to revert malicious attempts of enabling WDigest." | Out-File $outputFileName -Append}
     else
     {
         # check if running on Windows 6.1/6.2, which can be hardened, or on older version
@@ -777,14 +777,21 @@ if ($WDigest -eq $null)
             {"`nWDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding." | Out-File $outputFileName -Append}
         else
             {"`nThe operating system version is not supported. You have worse problems than WDigest configuration." | Out-File $outputFileName -Append}
+            {"`nWDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS." | Out-File $outputFileName -Append}
     }
 }
 else
 {    
     if ($WDigest.UseLogonCredential -eq 0)
-        {"`nWDigest doesn't store cleartext user credentials in memory, which is good." | Out-File $outputFileName -Append}
+    {
+        "`nWDigest UseLogonCredential registry key set to 0." | Out-File $outputFileName -Append
+        "`nWDigest doesn't store cleartext user credentials in memory, which is good. The setting was intentionally hardened." | Out-File $outputFileName -Append
+    }
     if ($WDigest.UseLogonCredential -eq 1)
-        {"`nWDigest stores cleartext user credentials in memory, which is bad and a possible finding." | Out-File $outputFileName -Append}
+    {
+        "`nWDigest UseLogonCredential registry key set to 1." | Out-File $outputFileName -Append
+        "`nWDigest stores cleartext user credentials in memory, which is bad and a finding. The configuration was either intentionally configured by an admin for some reason, or was set by a threat actor to fetch clear-text credentials." | Out-File $outputFileName -Append
+    }
 }
 
 # check for Net Session enumeration permissions
