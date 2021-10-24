@@ -1,10 +1,11 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.14" # used for logging purposes
+$Version = "1.15" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
+- Log errors to a log file using Start/Stop-Transcript
 - Check for "Always install with elevated privileges"
 - Debug the FirewallProducts check
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP
@@ -708,16 +709,32 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
 }
 
 # get Windows Firewall configuration
-# The NetFirewall commands are supported from Windows 8/2012 (version 6.2)
+Write-Host Getting Windows Firewall configuration... -ForegroundColor Yellow
 $outputFileName = "$hostname\Windows-Firewall_$hostname.txt"
-if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
+if ((Get-Service mpssvc).status -eq "Running")
 {
-    Write-Host Getting Windows Firewall configuration... -ForegroundColor Yellow
-    "The output of Get-NetFirewallProfile is:`n" | Out-File $outputFileName -Append
-    Get-NetFirewallProfile -PolicyStore ActiveStore | Out-File $hostname\Windows-Firewall_$hostname.txt -Append    
-    "`n----------------------------------`n" | Out-File $outputFileName -Append    
-    "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information yet." | Out-File $outputFileName -Append
-    Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $hostname\Windows-Firewall-Rules_$hostname.csv -NoTypeInformation
+    "The Windows Firewall service is running." | Out-File $outputFileName -Append
+    # The NetFirewall commands are supported from Windows 8/2012 (version 6.2)
+    if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
+    { 
+        "`n----------------------------------`n" | Out-File $outputFileName -Append
+        "The output of Get-NetFirewallProfile is:`n" | Out-File $outputFileName -Append
+        Get-NetFirewallProfile -PolicyStore ActiveStore | Out-File $outputFileName -Append    
+        "`n----------------------------------`n" | Out-File $outputFileName -Append
+        "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information there." | Out-File $outputFileName -Append
+        Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $hostname\Windows-Firewall-Rules_$hostname.csv -NoTypeInformation
+    }
+    if ($runningAsAdmin)
+    {
+        "`n----------------------------------`n" | Out-File $outputFileName -Append
+        netsh advfirewall export "$hostname\Windows_Firewall_Rules_$hostname.wfw"
+        "Firewall rules exported into Windows_Firewall_Rules_$hostname.wfw" | Out-File $outputFileName -Append
+        "To view it, open gpmc.msc in a test environment, create a temporary GPO, get to Computer=>Policies=>Windows Settings=>Security Settings=>Windows Firewall=>Right click on Firewall icon=>Import Policy" | Out-File $outputFileName -Append
+    }
+}
+else
+{
+    "The Windows Firewall service is not running." | Out-File $outputFileName -Append
 }
 
 # check if LLMNR and NETBIOS-NS are enabled
