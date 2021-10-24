@@ -727,7 +727,7 @@ if ((Get-Service mpssvc).status -eq "Running")
     if ($runningAsAdmin)
     {
         "`n----------------------------------`n" | Out-File $outputFileName -Append
-        netsh advfirewall export "$hostname\Windows_Firewall_Rules_$hostname.wfw"
+        netsh advfirewall export "$hostname\Windows_Firewall_Rules_$hostname.wfw" | Out-Null
         "Firewall rules exported into Windows_Firewall_Rules_$hostname.wfw" | Out-File $outputFileName -Append
         "To view it, open gpmc.msc in a test environment, create a temporary GPO, get to Computer=>Policies=>Windows Settings=>Security Settings=>Windows Firewall=>Right click on Firewall icon=>Import Policy" | Out-File $outputFileName -Append
     }
