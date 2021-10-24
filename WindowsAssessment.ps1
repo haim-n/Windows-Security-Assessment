@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.13" # used for logging purposes
+$Version = "1.14" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -9,6 +9,7 @@ $Version = "1.13" # used for logging purposes
 - Debug the FirewallProducts check
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP
 - Debug the RDP check on multiple OS versions
+- Improve the Firewall Rules export functionality
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
 -- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
@@ -713,10 +714,10 @@ if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.M
 {
     Write-Host Getting Windows Firewall configuration... -ForegroundColor Yellow
     "The output of Get-NetFirewallProfile is:`n" | Out-File $outputFileName -Append
-    Get-NetFirewallProfile | Out-File $hostname\Windows-Firewall_$hostname.txt -Append    
+    Get-NetFirewallProfile -PolicyStore ActiveStore | Out-File $hostname\Windows-Firewall_$hostname.txt -Append    
     "`n----------------------------------`n" | Out-File $outputFileName -Append    
-    "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file." | Out-File $outputFileName -Append
-    Get-NetFirewallRule | Export-Csv $hostname\Windows-Firewall-Rules_$hostname.csv -NoTypeInformation
+    "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information yet." | Out-File $outputFileName -Append
+    Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $hostname\Windows-Firewall-Rules_$hostname.csv -NoTypeInformation
 }
 
 # check if LLMNR and NETBIOS-NS are enabled
