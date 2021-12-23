@@ -5,12 +5,16 @@ $Version = "1.15" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
+- Improve the Firewall Rules export functionality - intergrated Nir's offer (currently commented out)
+- Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
+- Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
+- Check for bugs in the SMB1 check
 - Log errors to a log file using Start/Stop-Transcript
 - Check for "Always install with elevated privileges"
 - Debug the FirewallProducts check
-- Check for Windows Update / WSUS settings, check for WSUS over HTTP
+- Check for Windows Update / WSUS settings, check for WSUS over HTTP (reg key)
+- Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Debug the RDP check on multiple OS versions
-- Improve the Firewall Rules export functionality
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
 -- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
@@ -737,6 +741,25 @@ else
     "The Windows Firewall service is not running." | Out-File $outputFileName -Append
 }
 
+# Nir's offer to improve Firewall Rule export functionality - to integrate
+<#
+Get-NetFirewallRule -PolicyStore ActiveStore | Where { $_.Enabled -eq $True } | select -Property PolicyStoreSourceType,
+Name,
+DisplayName,
+DisplayGroup,
+@{Name='Protocol';Expression={($PSItem | Get-NetFirewallPortFilter).Protocol}},
+@{Name='LocalPort';Expression={($PSItem | Get-NetFirewallPortFilter).LocalPort}},
+@{Name='RemotePort';Expression={($PSItem | Get-NetFirewallPortFilter).RemotePort}},
+@{Name='RemoteAddress';Expression={($PSItem | Get-NetFirewallAddressFilter).RemoteAddress}},
+@{Name='Service';Expression={($PSItem | Get-NetFirewallServiceFilter).Service}},
+@{Name='Program';Expression={($PSItem | Get-NetFirewallApplicationFilter).Program}},
+@{Name='Package';Expression={($PSItem | Get-NetFirewallApplicationFilter).Package}},
+Enabled,
+Profile,
+Direction,
+Action | export-csv -NoTypeInformation .\FW.csv
+#>
+
 # check if LLMNR and NETBIOS-NS are enabled
 # LLMNR and NETBIOS-NS are insecure legacy protocols for local multicast DNS queries that can be abused by Responder/Inveigh
 Write-Host Getting LLMNR and NETBIOS-NS configuration... -ForegroundColor Yellow
@@ -855,7 +878,7 @@ if ($RestrictRemoteSAM -eq $null)
     if (($winVersion.Major -ge 10) -and ($winVersion.Build -ge 14393))
         {"This OS version is hardened by default." | Out-File $outputFileName -Append}
     else
-        {"This OS version is non hardened by default and this issue can be seen as a finding." | Out-File $outputFileName -Append}
+        {"This OS version is not hardened by default and this issue can be seen as a finding." | Out-File $outputFileName -Append}
 }
 else
 {
