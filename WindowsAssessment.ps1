@@ -5,7 +5,7 @@ $Version = "1.15" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
-- Improve the Firewall Rules export functionality - intergrated Nir's offer (currently commented out)
+- Improve the Firewall Rules export functionality - intergrat Nir's offer (currently commented out)
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
 - Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check for bugs in the SMB1 check
@@ -15,6 +15,7 @@ $Version = "1.15" # used for logging purposes
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP (reg key)
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Debug the RDP check on multiple OS versions
+- Integrate more checks from https://adsecurity.org/?p=3299
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
 -- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
@@ -35,7 +36,7 @@ $Version = "1.15" # used for logging purposes
 - Check if safe mode access by non-admins is blocked (based on SafeModeBlockNonAdmins reg value)
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
-- Enhance internet connectivity checks (curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
+- Enhance internet connectivity checks (add traceroute, curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
 - Check if internet DNS servers (8.8.8.8, etc.) are accessible
 - Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
 - Check for Device Control (GPO or dedicated software)
