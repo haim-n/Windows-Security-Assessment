@@ -1,11 +1,12 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.15" # used for logging purposes
+$Version = "1.16" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
-- Improve the Firewall Rules export functionality - intergrat Nir's offer (currently commented out)
+- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO - integrate Nital's script (currently commented out)
+- Improve the Firewall Rules export functionality - integrate Nir's offer (currently commented out)
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
 - Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check for bugs in the SMB1 check
@@ -18,7 +19,6 @@ $Version = "1.15" # used for logging purposes
 - Integrate more checks from https://adsecurity.org/?p=3299
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Check NTLM registry key
--- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO (based on registry)
 -- Determine if PowerShell logging is enabled (based on registry)
 -- Check Kerberos encryption algorithms
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
@@ -962,6 +962,43 @@ else
 {
     "PowerShell version 1/2 is not installed." | Out-File $outputFileName -Append
 }
+
+# check whether GPO changes are reprocessed if no changes identified
+## this was sent by Nital - need to integrate it
+<#
+try{
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction Stop
+    if ($temp.NoGPOListChanges -ne 0){
+        Write-Host 'GPO registry policy reprocess is not configured currectly "processed even if not changed"'
+​
+    }
+}
+catch{
+    Write-Host 'GPO registry policy reprocess is not configured "processed even if not changed"'
+}
+​
+try{
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -Name NoGPOListChanges -ErrorAction Stop
+    if ($temp.NoGPOListChanges -ne 0){
+        Write-Host 'GPO script policy reprocess is not configured currectly "processed even if not changed"'
+​
+    }
+}
+catch{
+    Write-Host 'GPO script policy reprocess is not configured "processed even if not changed"'
+}
+​
+try{
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{827D319E-6EAC-11D2-A4EA-00C04F79F83A}" -Name NoGPOListChanges -ErrorAction Stop
+    if ($temp.NoGPOListChanges -ne 0){
+        Write-Host 'GPO security policy reprocess is not configured currectly "processed even if not changed"'
+​
+    }
+}
+catch{
+    Write-Host 'GPO security policy reprocess is not configured "processed even if not changed"'
+}
+#>
 
 # get various system info (can take a few seconds)
 write-host Running systeminfo... -ForegroundColor Yellow
