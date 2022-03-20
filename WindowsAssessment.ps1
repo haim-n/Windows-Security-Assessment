@@ -1,11 +1,11 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.18" # used for logging purposes
+$Version = "1.20" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
-- Improve the Firewall Rules export functionality - integrate Nir's offer (currently commented out)
+- Improve the Firewall Rules export functionality - integrate Nir's offer (currently commented out) - Done
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
 - Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check for bugs in the SMB1 check
@@ -41,7 +41,7 @@ $Version = "1.18" # used for logging purposes
 - Add More settings from hardening docs
 - Log the time of each operation to the log file (create a function for it and reuse)
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
-- Change script structure to functions
+- Change script structure to functions - Done
 - Zip files without the need for PowerShell 5.0
 ##########################################################
 Controls Checklist:
@@ -394,7 +394,7 @@ function dataInstalledSoftware{
     writeToLog -str "running dataInstalledSoftware function"
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToScreen -str "Getting installed software..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | sort DisplayName | Out-String -Width 180 | Out-String)
+    writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Sort-Object DisplayName | Out-String -Width 180 | Out-String)
 }
 
 # get shared folders (Share permissions are missing for older PowerShell versions)
@@ -783,9 +783,9 @@ function checkAntiVirusStatus {
     param (
         $name
     )
-    # works only on Windows Clients, Not on Servers (2008, 2012, etc.). Maybe the "Get-MpPreference" could work on servers - wasn't tested.
     writeToLog -str "running checkAntiVirusStatus function"
     $outputFile = getNameForFile -name $name -extention ".txt"
+    # works only on Windows Clients, Not on Servers (2008, 2012, etc.). Maybe the "Get-MpPreference" could work on servers - wasn't tested.
     if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
     {
         writeToScreen -str "Getting Anti-Virus status..." -ForegroundColor Yellow
@@ -889,7 +889,7 @@ function dataWinFirewall {
             writeToFile -file $outputFile -path $folderLocation -str Get-NetFirewallProfile -PolicyStore ActiveStore | Out-String   
             writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
             writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information there."
-            $temp = $folderLocation + "\" + (getNameForFile -name name -extention ".csv")
+            $temp = $folderLocation + "\" + (getNameForFile -name $name -extention ".csv")
             #Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $temp -NoTypeInformation - removed replaced by Nir's Offer
             writeToLog -str "dataWinFirewall function: Exporting to CSV"
             Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object { $_.Enabled -eq $True } | Select-Object -Property PolicyStoreSourceType, Name, DisplayName, DisplayGroup,
@@ -906,7 +906,7 @@ function dataWinFirewall {
         {
             writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
             writeToLog -str "dataWinFirewall function: Exporting to wfw" 
-            $temp = $folderLocation + "\" + (getNameForFile -name name -extention ".wfw")
+            $temp = $folderLocation + "\" + (getNameForFile -name $name -extention ".wfw")
             netsh advfirewall export $temp | Out-Null
             writeToFile -file $outputFile -path $folderLocation -str "Firewall rules exported into $temp" 
             writeToFile -file $outputFile -path $folderLocation -str "To view it, open gpmc.msc in a test environment, create a temporary GPO, get to Computer=>Policies=>Windows Settings=>Security Settings=>Windows Firewall=>Right click on Firewall icon=>Import Policy"
@@ -963,7 +963,420 @@ function checkLLMNRAndNetBIOS {
     
 }
 
-### start of script
+# check if cleartext credentials are saved in lsass memory for WDigest
+function checkWDigest {
+    param (
+        $name
+    )
+    # turned on by default for Win7/2008/8/2012, to fix it you must install kb2871997 and than fix the registry value below
+    # turned off by default for Win8.1/2012R2 and above
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkWDigest function"
+    writeToScreen -str "Getting WDigest credentials configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= WDigest Configuration ============="
+    $WDigest = Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" UseLogonCredential -ErrorAction SilentlyContinue
+    if ($null -eq $WDigest)
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry value wasn't found."
+        # check if running on Windows 6.3 or above
+        if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
+            {"`nThe WDigest protocol is turned off by default for Win8.1/2012R2 and above. So it is OK, but still recommended to set the UseLogonCredential registry value to 0, to revert malicious attempts of enabling WDigest." | Out-File $outputFileName -Append}
+        else
+        {
+            # check if running on Windows 6.1/6.2, which can be hardened, or on older version
+            if (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 1))    
+                {writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding."}
+            else
+                {writeToFile -file $outputFile -path $folderLocation -str "The operating system version is not supported. You have worse problems than WDigest configuration."}
+                {writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS."}
+        }
+    }
+    else
+    {    
+        if ($WDigest.UseLogonCredential -eq 0)
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry key set to 0."
+            writeToFile -file $outputFile -path $folderLocation -str "WDigest doesn't store cleartext user credentials in memory, which is good. The setting was intentionally hardened."
+        }
+        if ($WDigest.UseLogonCredential -eq 1)
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry key set to 1."
+            writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory, which is bad and a finding. The configuration was either intentionally configured by an admin for some reason, or was set by a threat actor to fetch clear-text credentials."
+        }
+    }
+    
+}
+
+# check for Net Session enumeration permissions
+function checkNetSessionEnum {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkNetSessionEnum function"
+    writeToScreen -str "Getting NetSession configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= NetSession Configuration ============="
+    writeToFile -file $outputFile -path $folderLocation -str "By default, on Windows 2016 (and below) and old builds of Windows 10, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound."
+    writeToFile -file $outputFile -path $folderLocation -str "See more details here:"
+    writeToFile -file $outputFile -path $folderLocation -str "https://gallery.technet.microsoft.com/Net-Cease-Blocking-Net-1e8dcb5b"
+    writeToFile -file $outputFile -path $folderLocation -str "https://www.powershellgallery.com/packages/NetCease/1.0.3"
+    writeToFile -file $outputFile -path $folderLocation -str "--------- Security Descriptor Check ---------"
+    # copied from Get-NetSessionEnumPermission
+    writeToFile -file $outputFile -path $folderLocation -str "Below are the permissions granted to enumerate net sessions."
+    writeToFile -file $outputFile -path $folderLocation -str "If the Authenticated Users group has permissions, this is a finding.`n"
+    $SessionRegValue = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo
+    $SecurityDesc = New-Object -TypeName System.Security.AccessControl.CommonSecurityDescriptor -ArgumentList ($true,$false,$SessionRegValue,0)
+    writeToFile -file $outputFile -path $folderLocation -str ($SecurityDesc.DiscretionaryAcl | ForEach-Object {$_ | Add-Member -MemberType ScriptProperty -Name TranslatedSID -Value ({$this.SecurityIdentifier.Translate([System.Security.Principal.NTAccount]).Value}) -PassThru} | Out-String)
+    writeToFile -file $outputFile -path $folderLocation -str "--------- Raw Registry Value Check ---------" 
+    writeToFile -file $outputFile -path $folderLocation -str "For comparison, below are the beggining of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:"
+    writeToFile -file $outputFile -path $folderLocation -str "Default value for Windows 2019 and newer builds of Windows 10 (hardened): 1,0,4,128,160,0,0,0,172"
+    writeToFile -file $outputFile -path $folderLocation -str "Default value for Windows 2016, older builds of Windows 10 and older OS versions (not secure - finding): 1,0,4,128,120,0,0,0,132"
+    writeToFile -file $outputFile -path $folderLocation -str "Value after running NetCease (hardened): 1,0,4,128,20,0,0,0,32"
+    writeToFile -file $outputFile -path $folderLocation -str "`nThe SrvsvcSessionInfo registry value under HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity is set to:"
+    writeToFile -file $outputFile -path $folderLocation -str ($SessionRegValue | Out-String)
+}
+
+# check for SAM enumeration permissions
+function checkSAMEnum{
+    param(
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkSAMEnum function"
+    writeToScreen -str "Getting SAM enumeration configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= Remote SAM (SAMR) Configuration ============="
+    writeToFile -file $outputFile -path $folderLocation -str "`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups."
+    writeToFile -file $outputFile -path $folderLocation -str "However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound."
+    writeToFile -file $outputFile -path $folderLocation -str "These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'."
+    writeToFile -file $outputFile -path $folderLocation -str "The newer OS versions are also recommended to be configured with the policy, though it is not essential."
+    writeToFile -file $outputFile -path $folderLocation -str "`nSee more details here:"
+    writeToFile -file $outputFile -path $folderLocation -str "https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-access-restrict-clients-allowed-to-make-remote-sam-calls"
+    writeToFile -file $outputFile -path $folderLocation -str "https://blog.stealthbits.com/making-internal-reconnaissance-harder-using-netcease-and-samri1o"
+    writeToFile -file $outputFile -path $folderLocation -str "`n----------------------------------------------------"
+
+    $RestrictRemoteSAM = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa RestrictRemoteSAM -ErrorAction SilentlyContinue
+    if ($null -eq $RestrictRemoteSAM)
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "The 'RestrictRemoteSAM' registry value was not found. SAM enumeration permissions are configured as the default for the OS version, which is $winVersion."
+        if (($winVersion.Major -ge 10) -and ($winVersion.Build -ge 14393))
+            {writeToFile -file $outputFile -path $folderLocation -str "This OS version is hardened by default."}
+        else
+            {writeToFile -file $outputFile -path $folderLocation -str "This OS version is not hardened by default and this issue can be seen as a finding."}
+    }
+    else
+    {
+        $RestrictRemoteSAMValue = $RestrictRemoteSAM.RestrictRemoteSAM
+        writeToFile -file $outputFile -path $folderLocation -str "The 'RestrictRemoteSAM' registry value is set to: $RestrictRemoteSAMValue"
+        $RestrictRemoteSAMPermissions = ConvertFrom-SDDLString -Sddl $RestrictRemoteSAMValue
+        writeToFile -file $outputFile -path $folderLocation -str "Below are the permissions for SAM enumeration. Make sure that only Administrators are granted Read permissions."
+        writeToFile -file $outputFile -path $folderLocation -str ($RestrictRemoteSAMPermissions | Out-String)
+    }
+}
+
+# check for PowerShell v2 installation, which lacks security features (logging, AMSI)
+function checkPowershellVer {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkPowershellVer function"
+    writeToScreen -str "Getting PowerShell versions..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "PowerShell 1/2 are legacy versions which don't support logging and AMSI."
+    writeToFile -file $outputFile -path $folderLocation -str "It's recommended to uninstall legacy PowerShell versions and make sure that only PowerShell 5+ is installed."
+    writeToFile -file $outputFile -path $folderLocation -str "See the following article for details on PowerShell downgrade attacks: https://www.leeholmes.com/blog/2017/03/17/detecting-and-preventing-powershell-downgrade-attacks" 
+    writeToFile -file $outputFile -path $folderLocation -str ("This script is running on PowerShell version " + $PSVersionTable.PSVersion.ToString())
+    # Checking if PowerShell Version 2/5 are installed, by trying to run command (Get-Host) with PowerShellv2 and v5 Engine.
+    writeToFile -file $outputFile -path $folderLocation -str "============= Running Test Commands ============="
+    try
+    {
+        $temp = Start-Job {Get-Host} -PSVersion 2.0 -Name "PSv2Check"
+        writeToFile -file $outputFile -path $folderLocation -str "PowerShell version 2 is installed and was able to run commands. This is a finding!"
+    }
+    catch
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "PowerShell version 2 was not able to run. This is secure."
+    }
+    finally
+    {
+        Get-Job | Remove-Job -Force
+    }
+    # same as above, for PSv5
+    try
+    {
+        $temp = Start-Job {Get-Host} -PSVersion 5.0 -Name "PSv5Check"
+        writeToFile -file $outputFile -path $folderLocation -str "PowerShell version 5 is installed and was able to run commands." 
+    }
+    catch
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "PowerShell version 5 was not able to run."
+    }
+    finally
+    {
+        Get-Job | Remove-Job -Force
+    }
+    # use Get-WindowsFeature if running on Windows SERVER 2008R2 or above
+    if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 1))) # version should be 7+ or 6.1+
+    {
+        if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3)) # type should be server or DC
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsFeature =============" 
+            writeToFile -file $outputFile -path $folderLocation -str (Get-WindowsFeature -Name PowerShell-V2 | Out-String)
+        }    
+    }
+    # use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin
+    if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
+    {    
+        writeToFile -file $outputFile -path $folderLocation -str "============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature =============" 
+        if ($runningAsAdmin)
+        {
+            writeToFile -file $outputFile -path $folderLocation -str (Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShell* | Format-Table DisplayName, State -AutoSize | Out-String)
+        }
+        else
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Cannot run Get-WindowsOptionalFeature when non running as admin." 
+        }
+    }
+    # run registry check
+    writeToFile -file $outputFile -path $folderLocation -str "============= Registry Check =============" 
+    writeToFile -file $outputFile -path $folderLocation -str "Based on the registry value described in the following article:"
+    writeToFile -file $outputFile -path $folderLocation -str "https://devblogs.microsoft.com/powershell/detection-logic-for-powershell-installation"
+    $LegacyPowerShell = Get-ItemProperty "HKLM:\Software\Microsoft\PowerShell\1\PowerShellEngine" PowerShellVersion -ErrorAction SilentlyContinue
+    if (($LegacyPowerShell.PowerShellVersion -eq "2.0") -or ($LegacyPowerShell.PowerShellVersion -eq "1.0"))
+    {
+        writeToFile -file $outputFile -path $folderLocation -str ("PowerShell version " + $LegacyPowerShell.PowerShellVersion + " is installed, based on the registry value mentioned above.")
+    }
+    else
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "PowerShell version 1/2 is not installed." 
+    }
+    
+}
+
+# NTLMv2 enforcement check - check if there is a GPO that enforce the use of NTLMv2 (checking registry)
+function checkNTLMv2 {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkNTLMv2 function"
+    writeToScreen -str "Getting NTLM version enforcment..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= NTLM Check ============="
+    writeToFile -file $outputFile -path $folderLocation -str "NTLMv1 & LM are  legacy authentication protocols that are reversible"
+    writeToFile -file $outputFile -path $folderLocation -str "If there are legacy systems in the network configure Level 3 NTLM hardning on the domain (that way only the lagacy system will use the legacy authentication) otherwise select Level 5"
+    writeToFile -file $outputFile -path $folderLocation -str "For more information go to: https://docs.microsoft.com/en-us/troubleshoot/windows-client/windows-security/enable-ntlm-2-authentication `n"
+    $temp = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LmCompatibilityLevel -ErrorAction SilentlyContinue # registry key that contains the NTLM restrications
+    if($null -eq $temp){
+        writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default`n" #using system default depends on OS version
+    }
+    switch ($temp.lmcompatibilitylevel) {
+        (0) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" }
+        (1) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" }
+        (2) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" }
+        (3) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration`n"}
+        (4) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration`n"}
+        (5) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - A good thing!)`n"}
+        Default {writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`n"}
+    }
+}
+
+# GPO reprocess check
+function checkGPOReprocess {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkGPOReprocess function"
+    writeToScreen -str "Getting GPO enforcment..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`n============= GPO Reprocess Check ============="
+    writeToFile -file $outputFile -path $folderLocation -str "If GPO reprocess is not enforced once the GPO received is the first and lest time the gpo is enforced (until next change)"
+    writeToFile -file $outputFile -path $folderLocation -str "GPO can be overridden with administrator premission - it is recommended that all security settings will be repossessed every time the system checks for GPO change`n"
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains registry polciy reprocess settings 
+    if($null -eq $temp){
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO regirstry policy reprocess is not configured "processed even if not changed"' 
+    }
+    elseif ($temp.NoGPOListChanges -ne 0) {
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO regirstry policy reprocess is not configured currectly "processed even if not changed"' 
+    }
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains script policy reprocess settings 
+    if($null -eq $temp){
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured "processed even if not changed"' 
+    }
+    elseif ($temp.NoGPOListChanges -ne 0) {
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured currectly "processed even if not changed"' 
+    }
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{827D319E-6EAC-11D2-A4EA-00C04F79F83A}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains security policy reprocess settings 
+    if($null -eq $temp){
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is not configured "processed even if not changed"'
+    }
+    elseif ($temp.NoGPOListChanges -ne 0) {
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is not configured currectly "processed even if not changed"'
+    }
+    
+}
+
+# Check always install elevated setting
+function checkInstallElevated {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkInstallElevated function"
+    writeToScreen -str "Getting Always install with elevation setting..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`n============= Always install elevated Check ============="
+    writeToFile -file $outputFile -path $folderLocation -str "checking if GPO is configured to force installation as administrator - can be used by an attacker`n"
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
+    if($null -eq $temp){
+        writeToFile -file $outputFile -path $folderLocation -str ' > No GPO for for "Always install with elevation"'
+    }
+    elseif ($temp.AlwaysInstallElevated -eq 1) {
+        writeToFile -file $outputFile -path $folderLocation -str ' > Always install with elevated is enabled - this is a finding!'
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO for "Always install with elevated" is existing but not forceing installing with elevation'
+    }
+    
+}
+
+# Powershell Audit settings check
+function checkPowrshellAudit {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkPowrshellAudit function"
+    writeToScreen -str "Getting Powershell audit policy..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`n============= PowerShell Audit ============="
+    writeToFile -file $outputFile -path $folderLocation -str " Powershell Audit is configured by three main settings modules, script block and transcript:"
+    writeToFile -file $outputFile -path $folderLocation -str "  - Model logging - audits the modules used in powershell commands\scripts"
+    writeToFile -file $outputFile -path $folderLocation -str "  - Script block - audits the use of script block in powershell commands\scripts"
+    writeToFile -file $outputFile -path $folderLocation -str "  - Transcript - audits the commands running in powershell"
+    writeToFile -file $outputFile -path $folderLocation -str " For comprehensive audit trail all of those need to be configured and each of them has a special setting that need to be configured to work properly (for example in module audit you need to specify witch modules to audit)`n"
+    # --- Start Of Module Logging ---
+    writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Module audit: "
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in Computer-Space
+    if($null -eq $temp){
+        $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in User-Space 
+        if($null -ne $temp -and $temp.EnableModuleLogging -eq 1){
+            $temp2 = Get-ItemPropertyValue -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames\" -name * -ErrorAction SilentlyContinue # registry that contains which Module are logged in User-Space  
+            if($temp2 -cnotcontains "*"){
+                writeToFile -file $outputFile -path $folderLocation -str  " > PowerShell - Module logging is enforced on all modules but only on the user"
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is enforced only on the user and not on all modules" 
+                writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames") -ErrorAction SilentlyContinue | Out-String # getting which Module are logged in User-Space  
+            } 
+        }
+        else {
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is not enforced"
+        }
+    }
+    elseif($temp.EnableModuleLogging -eq 1){
+        $temp2 = Get-ItemPropertyValue -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -Name * -ErrorAction SilentlyContinue # registry that contains which Module are logged in Computer-Space
+        if($temp2 -cnotcontains "*"){
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is not enforced on all modules:" 
+            writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames"  -ErrorAction SilentlyContinue | Out-String) # getting which Module are logged in User-Space  
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is enforced on all modules"
+        }
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is Not enforced!"
+    }
+
+    # --- End Of Module Logging ---
+    # --- Start of ScriptBlock logging
+    writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Script block logging: "
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockLogging -ErrorAction SilentlyContinue # registry containing script-block logging setting - in computer-space
+    if($null -eq $temp -or $temp.EnableScriptBlockLogging -ne 1){
+        $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockLogging -ErrorAction SilentlyContinue # registry containing script-block logging setting - in user-space
+        if($null -ne $temp -and $temp.EnableScriptBlockLogging -eq 1){
+            $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockInvocationLogging -ErrorAction SilentlyContinue # registry containing script-block Invocation logging setting - in user-space
+            if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is enabled but Invocation logging is not enforced - only on user" 
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is enforced - only on user"
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is not enforced"
+        }
+    }
+    else{
+        $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockInvocationLogging -ErrorAction SilentlyContinue # registry containing script-block Invocation logging setting - in computer-space
+        if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is enabled but Invocation logging is not enforced"
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is enabled"
+        }
+    }
+    # --- End of ScriptBlock logging
+    # --- Start Transcription logging 
+    writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Transcripting logging: "
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableTranscripting -ErrorAction SilentlyContinue # registry containing transcripting logging setting - computer-space
+    $bollCheck = $false
+    if($null -eq $temp -or $temp.EnableTranscripting -ne 1){
+        $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableTranscripting -ErrorAction SilentlyContinue # registry containing transcripting logging setting - user-space
+        if($null -ne $temp -and $temp.EnableTranscripting -eq 1){
+            $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableInvocationHeader -ErrorAction SilentlyContinue # registry containing transcripting Invocation-Header logging setting - user-space
+            if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced"
+                $bollCheck = $True
+            }
+            $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name OutputDirectory -ErrorAction SilentlyContinue # registry containing transcripting output directory logging setting - user-space
+            if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enforced but no folder is set to save the log"
+                $bollCheck = $True
+            }
+            if(!$bollCheck){
+                writeToFile -file $outputFile -path $folderLocation -str " > Powershell - Transcription logging is enforced currectly but only on the user"
+                $bollCheck = $True
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is not enforced (logging input and outpot of powershell command)"
+            $bollCheck = $True
+        }
+    }
+    else{
+        $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableInvocationHeader -ErrorAction SilentlyContinue # registry containing transcripting Invocation-Header logging setting - computer-space
+        if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced" 
+            $bollCheck = $True
+        }
+        $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name OutputDirectory -ErrorAction SilentlyContinue # registry containing transcripting output directory logging setting - computer-space
+        if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but no folder is set to save the log" 
+            $bollCheck = $True
+        }
+    }
+    if(!$bollCheck){
+        writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled and configured currectly" 
+    }
+    
+}
+
+# get various system info (can take a few seconds)
+function dataSystemInfo {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running dataSystemInfo function"
+    writeToScreen -str "Running systeminfo..." -ForegroundColor Yellow
+    # Get-ComputerInfo exists only in PowerShell 5.1 and above
+    if ($PSVersionTable.PSVersion.ToString() -ge 5.1)
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "============= Get-ComputerInfo =============" 
+        writeToFile -file $outputFile -path $folderLocation -str (Get-ComputerInfo | Out-String)
+    }
+    writeToFile -file $outputFile -path $folderLocation -str "`n============= systeminfo ============="
+    writeToFile -file $outputFile -path $folderLocation -str (systeminfo | Out-String)
+}
+
+### start of script ###
 $startTime = Get-Date
 writeToScreen -str "Hello dear user!" -ForegroundColor "Green"
 writeToScreen -str "This script will output the results to a folder or a zip file with the computer name." -ForegroundColor "Green"
@@ -997,6 +1410,7 @@ writeToLog -str ("System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:m
 writeToLog -str "Script Version: $Version"
 writeToLog -str ("Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") )
 
+####Start of Checks
 #########################################################
 
 # get current user privileges
@@ -1066,364 +1480,31 @@ dataWinFirewall -name "Windows-Firewall"
 checkLLMNRAndNetBIOS -name "LLMNR_and_NETBIOS"
 
 # check if cleartext credentials are saved in lsass memory for WDigest
-# turned on by default for Win7/2008/8/2012, to fix it you must install kb2871997 and than fix the registry value below
-# turned off by default for Win8.1/2012R2 and above
-writeToScreen -str "Getting WDigest credentials configuration..." -ForegroundColor Yellow
-$outputFileName = "$hostname\WDigest_$hostname.txt"
-"============= WDigest Configuration =============" | Out-File $outputFileName -Append
-$WDigest = Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" UseLogonCredential -ErrorAction SilentlyContinue
-if ($WDigest -eq $null)
-{
-    "`nWDigest UseLogonCredential registry value wasn't found." | Out-File $outputFileName -Append
-    # check if running on Windows 6.3 or above
-    if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
-        {"`nThe WDigest protocol is turned off by default for Win8.1/2012R2 and above. So it is OK, but still recommended to set the UseLogonCredential registry value to 0, to revert malicious attempts of enabling WDigest." | Out-File $outputFileName -Append}
-    else
-    {
-        # check if running on Windows 6.1/6.2, which can be hardened, or on older version
-        if (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 1))    
-            {"`nWDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding." | Out-File $outputFileName -Append}
-        else
-            {"`nThe operating system version is not supported. You have worse problems than WDigest configuration." | Out-File $outputFileName -Append}
-            {"`nWDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS." | Out-File $outputFileName -Append}
-    }
-}
-else
-{    
-    if ($WDigest.UseLogonCredential -eq 0)
-    {
-        "`nWDigest UseLogonCredential registry key set to 0." | Out-File $outputFileName -Append
-        "`nWDigest doesn't store cleartext user credentials in memory, which is good. The setting was intentionally hardened." | Out-File $outputFileName -Append
-    }
-    if ($WDigest.UseLogonCredential -eq 1)
-    {
-        "`nWDigest UseLogonCredential registry key set to 1." | Out-File $outputFileName -Append
-        "`nWDigest stores cleartext user credentials in memory, which is bad and a finding. The configuration was either intentionally configured by an admin for some reason, or was set by a threat actor to fetch clear-text credentials." | Out-File $outputFileName -Append
-    }
-}
+checkWDigest -name "WDigest"
 
 # check for Net Session enumeration permissions
-writeToScreen -str "Getting NetSession configuration..." -ForegroundColor Yellow
-$outputFileName = "$hostname\NetSession_$hostname.txt"
-"============= NetSession Configuration =============" | Out-File $outputFileName -Append
-"By default, on Windows 2016 (and below) and old builds of Windows 10, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $outputFileName -Append
-"`nSee more details here:" | Out-File $outputFileName -Append
-"https://gallery.technet.microsoft.com/Net-Cease-Blocking-Net-1e8dcb5b" | Out-File $outputFileName -Append
-"https://www.powershellgallery.com/packages/NetCease/1.0.3" | Out-File $outputFileName -Append
-"`n--------- Security Descriptor Check ---------" | Out-File $outputFileName -Append
-# copied from Get-NetSessionEnumPermission
-"Below are the permissions granted to enumerate net sessions." | Out-File $outputFileName -Append
-"If the Authenticated Users group has permissions, this is a finding.`n" | Out-File $outputFileName -Append
-$SessionRegValue = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo
-$SecurityDesc = New-Object -TypeName System.Security.AccessControl.CommonSecurityDescriptor -ArgumentList ($true,$false,$SessionRegValue,0)
-$SecurityDesc.DiscretionaryAcl | ForEach-Object {$_ | Add-Member -MemberType ScriptProperty -Name TranslatedSID -Value ({$this.SecurityIdentifier.Translate([System.Security.Principal.NTAccount]).Value}) -PassThru} | Out-File $outputFileName -Append
-"`n--------- Raw Registry Value Check ---------" | Out-File $outputFileName -Append
-"For comparison, below are the beggining of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:" | Out-File $outputFileName -Append
-"Default value for Windows 2019 and newer builds of Windows 10 (hardened): 1,0,4,128,160,0,0,0,172" | Out-File $outputFileName -Append
-"Default value for Windows 2016, older builds of Windows 10 and older OS versions (not secure - finding): 1,0,4,128,120,0,0,0,132" | Out-File $outputFileName -Append
-"Value after running NetCease (hardened): 1,0,4,128,20,0,0,0,32" | Out-File $outputFileName -Append
-"`nThe SrvsvcSessionInfo registry value under HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity is set to:" | Out-File $outputFileName -Append
-$SessionRegValue | Out-File $outputFileName -Append
+checkNetSessionEnum -name "NetSession"
 
 # check for SAM enumeration permissions
-writeToScreen -str "Getting SAM enumeration configuration..." -ForegroundColor Yellow
-$outputFileName = "$hostname\SAM-Enumeration_$hostname.txt"
-"============= Remote SAM (SAMR) Configuration =============" | Out-File $outputFileName -Append
-"`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups." | Out-File $outputFileName -Append
-"However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $outputFileName -Append
-"These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'." | Out-File $outputFileName -Append
-"The newer OS versions are also recommended to be configured with the policy, though it is not essential." | Out-File $outputFileName -Append
-"`nSee more details here:" | Out-File $outputFileName -Append
-"https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-access-restrict-clients-allowed-to-make-remote-sam-calls" | Out-File $outputFileName -Append
-"https://blog.stealthbits.com/making-internal-reconnaissance-harder-using-netcease-and-samri1o" | Out-File $outputFileName -Append
-"`n----------------------------------------------------" | Out-File $outputFileName -Append
-
-$RestrictRemoteSAM = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa RestrictRemoteSAM -ErrorAction SilentlyContinue
-if ($RestrictRemoteSAM -eq $null)
-{
-    "`nThe 'RestrictRemoteSAM' registry value was not found. SAM enumeration permissions are configured as the default for the OS version, which is $winVersion." | Out-File $outputFileName -Append
-    if (($winVersion.Major -ge 10) -and ($winVersion.Build -ge 14393))
-        {"This OS version is hardened by default." | Out-File $outputFileName -Append}
-    else
-        {"This OS version is not hardened by default and this issue can be seen as a finding." | Out-File $outputFileName -Append}
-}
-else
-{
-    $RestrictRemoteSAMValue = $RestrictRemoteSAM.RestrictRemoteSAM
-    "`nThe 'RestrictRemoteSAM' registry value is set to: $RestrictRemoteSAMValue" | Out-File $outputFileName -Append
-    $RestrictRemoteSAMPermissions = ConvertFrom-SDDLString -Sddl $RestrictRemoteSAMValue
-    "`nBelow are the permissions for SAM enumeration. Make sure that only Administrators are granted Read permissions." | Out-File $outputFileName -Append
-    $RestrictRemoteSAMPermissions | Out-File $outputFileName -Append
-}
-
+checkSAMEnum -name "SAM-Enumeration"
 
 # check for PowerShell v2 installation, which lacks security features (logging, AMSI)
-writeToScreen -str "Getting PowerShell versions..." -ForegroundColor Yellow
-$outputFileName = "$hostname\PowerShell-Versions_$hostname.txt"
-"PowerShell 1/2 are legacy versions which don't support logging and AMSI." | Out-File $outputFileName -Append
-"It's recommended to uninstall legacy PowerShell versions and make sure that only PowerShell 5+ is installed." | Out-File $outputFileName -Append
-"See the following article for details on PowerShell downgrade attacks: https://www.leeholmes.com/blog/2017/03/17/detecting-and-preventing-powershell-downgrade-attacks" | Out-File $outputFileName -Append
-"`nThis script is running on PowerShell version " + $PSVersionTable.PSVersion.ToString() | Out-File $outputFileName -Append
-# Checking if PowerShell Version 2/5 are installed, by trying to run command (Get-Host) with PowerShellv2 and v5 Engine.
-"`n============= Running Test Commands =============" | Out-File $outputFileName -Append
-try
-{
-    $temp = Start-Job {Get-Host} -PSVersion 2.0 -Name "PSv2Check"
-    "PowerShell version 2 is installed and was able to run commands. This is a finding!" | Out-File $outputFileName -Append
-}
-catch
-{
-    "PowerShell version 2 was not able to run. This is secure." | Out-File $outputFileName -Append
-}
-finally
-{
-    Get-Job | Remove-Job -Force
-}
-# same as above, for PSv5
-try
-{
-    $temp = Start-Job {Get-Host} -PSVersion 5.0 -Name "PSv5Check"
-    "PowerShell version 5 is installed and was able to run commands." | Out-File $outputFileName -Append
-}
-catch
-{
-    "PowerShell version 5 was not able to run." | Out-File $outputFileName -Append
-}
-finally
-{
-    Get-Job | Remove-Job -Force
-}
-# use Get-WindowsFeature if running on Windows SERVER 2008R2 or above
-if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 1))) # version should be 7+ or 6.1+
-{
-    if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3)) # type should be server or DC
-    {
-        "`n============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsFeature =============" | Out-File $outputFileName -Append
-        Get-WindowsFeature -Name PowerShell-V2 | Out-File $outputFileName -Append
-    }    
-}
-# use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin
-if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
-{    
-    "`n============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature =============" | Out-File $outputFileName -Append
-    if ($runningAsAdmin)
-    {
-        Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShell* | ft DisplayName, State -AutoSize | Out-File $outputFileName -Append
-    }
-    else
-    {
-        "Cannot run Get-WindowsOptionalFeature when non running as admin." | Out-File $outputFileName -Append
-    }
-}
-# run registry check
-"`n============= Registry Check =============" | Out-File $outputFileName -Append
-"Based on the registry value described in the following article:" | Out-File $outputFileName -Append
-"https://devblogs.microsoft.com/powershell/detection-logic-for-powershell-installation" | Out-File $outputFileName -Append
-$LegacyPowerShell = Get-ItemProperty "HKLM:\Software\Microsoft\PowerShell\1\PowerShellEngine" PowerShellVersion -ErrorAction SilentlyContinue
-if (($LegacyPowerShell.PowerShellVersion -eq "2.0") -or ($LegacyPowerShell.PowerShellVersion -eq "1.0"))
-{
-    "PowerShell version " + $LegacyPowerShell.PowerShellVersion + " is installed, based on the registry value mentioned above." | Out-File $outputFileName -Append
-}
-else
-{
-    "PowerShell version 1/2 is not installed." | Out-File $outputFileName -Append
-}
-
+checkPowershellVer -name "PowerShell-Versions"
 
 # NTLMv2 enforcement check - check if there is a GPO that enforce the use of NTLMv2 (checking registry)
-writeToScreen -str "Getting NTLM version enforcment..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
-"`n============= NTLM Check =============" | Out-File $outputFileName -Append
-"NTLMv1 & LM are  legacy authentication protocols that are reversible" | Out-File $outputFileName -Append
-"If there are legacy systems in the network configure Level 3 NTLM hardning on the domain (that way only the lagacy system will use the legacy authentication) otherwise select Level 5" | Out-File $outputFileName -Append
-"For more information go to: https://docs.microsoft.com/en-us/troubleshoot/windows-client/windows-security/enable-ntlm-2-authentication `n" | Out-File $outputFileName -Append
-$temp = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LmCompatibilityLevel -ErrorAction SilentlyContinue # registry key that contains the NTLM restrications
-if($null -eq $temp){
-    " > NTLM Authntication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default`n" | Out-File $outputFileName -Append #using system default depends on OS version
-}
-switch ($temp.lmcompatibilitylevel) {
-    (0) { " > NTLM Authntication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" | Out-File $outputFileName -Append }
-    (1) { " > NTLM Authntication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" | Out-File $outputFileName -Append }
-    (2) { " > NTLM Authntication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" | Out-File $outputFileName -Append }
-    (3) { " > NTLM Authntication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration`n" | Out-File $outputFileName -Append }
-    (4) { " > NTLM Authntication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration`n" | Out-File $outputFileName -Append }
-    (5) { " > NTLM Authntication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - A good thing!)`n" | Out-File $outputFileName -Append }
-    Default {" > NTLM Authntication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`n" | Out-File $outputFileName -Append}
-}
-
+checkNTLMv2 -name "Domain-Hardning"
 
 # GPO reprocess check
-writeToScreen -str "Getting GPO enforcment..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
-"`n============= GPO Reprocess Check =============" | Out-File $outputFileName -Append
-"If GPO reprocess is not enforced once the GPO received is the first and lest time the gpo is enforced (until next change)" | Out-File $outputFileName -Append
-"GPO can be overridden with administrator premission - it is recommended that all security settings will be repossessed every time the system checks for GPO change`n" | Out-File $outputFileName -Append
-$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains registry polciy reprocess settings 
-if($null -eq $temp){
-    ' > GPO regirstry policy reprocess is not configured "processed even if not changed"' | Out-File $outputFileName -Append
-}
-elseif ($temp.NoGPOListChanges -ne 0) {
-    ' > GPO regirstry policy reprocess is not configured currectly "processed even if not changed"' | Out-File $outputFileName -Append
-}
-$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains script policy reprocess settings 
-if($null -eq $temp){
-    ' > GPO script policy reprocess is not configured "processed even if not changed"' | Out-File $outputFileName -Append
-}
-elseif ($temp.NoGPOListChanges -ne 0) {
-    ' > GPO script policy reprocess is not configured currectly "processed even if not changed"' | Out-File $outputFileName -Append
-}
-$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{827D319E-6EAC-11D2-A4EA-00C04F79F83A}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains security policy reprocess settings 
-if($null -eq $temp){
-    ' > GPO security policy reprocess is not configured "processed even if not changed"' | Out-File $outputFileName -Append
-}
-elseif ($temp.NoGPOListChanges -ne 0) {
-    ' > GPO security policy reprocess is not configured currectly "processed even if not changed"' | Out-File $outputFileName -Append
-}
+checkGPOReprocess -name "Domain-Hardning"
 
 # Powershell Audit settings check
-writeToScreen -str "Getting Powershell audit policy..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Audit-Policy_$hostname.txt"
-"`n============= PowerShell Audit =============" | Out-File $outputFileName -Append
-" Powershell Audit is configured by three main settings modules, script block and transcript:" | Out-File $outputFileName -Append
-"  - Model logging - audits the modules used in powershell commands\scripts" | Out-File $outputFileName -Append
-"  - Script block - audits the use of script block in powershell commands\scripts" | Out-File $outputFileName -Append
-"  - Transcript - audits the commands running in powershell" | Out-File $outputFileName -Append
-" For comprehensive audit trail all of those need to be configured and each of them has a special setting that need to be configured to work properly (for example in module audit you need to specify witch modules to audit)`n" | Out-File $outputFileName -Append
-# --- Start Of Module Logging ---
-"--- PowerShell Module audit: "| Out-File $outputFileName -Append
-$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in Computer-Space
-if($null -eq $temp){
-    $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in User-Space 
-    if($null -ne $temp -and $temp.EnableModuleLogging -eq 1){
-        $temp2 = Get-ItemPropertyValue -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames\" -name * -ErrorAction SilentlyContinue # registry that contains which Module are logged in User-Space  
-        if($temp2 -cnotcontains "*"){
-            " > PowerShell - Module logging is enforced on all modules but only on the user" | Out-File $outputFileName -Append
-        }
-        else{
-            " > PowerShell - Module logging is enforced only on the user and not on all modules" | Out-File $outputFileName -Append
-            Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -ErrorAction SilentlyContinue | Out-File $outputFileName -Append # getting which Module are logged in User-Space  
-        } 
-    }
-    else {
-        " > PowerShell - Module logging is not enforced"  | Out-File $outputFileName -Append
-    }
-}
-elseif($temp.EnableModuleLogging -eq 1){
-    $temp2 = Get-ItemPropertyValue -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -Name * -ErrorAction SilentlyContinue # registry that contains which Module are logged in Computer-Space
-    if($temp2 -cnotcontains "*"){
-        " > PowerShell - Module logging is not enforced on all modules:"  | Out-File $outputFileName -Append
-        Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames"  -ErrorAction SilentlyContinue | Out-File $outputFileName -Append # getting which Module are logged in User-Space  
-    }
-    else{
-        " > PowerShell - Module logging is enforced on all modules" | Out-File $outputFileName -Append
-    }
-}
-else{
-    " > PowerShell - Module logging is Not enforced!" | Out-File $outputFileName -Append
-}
-
-# --- End Of Module Logging ---
-# --- Start of ScriptBlock logging
-"--- PowerShell Script block logging: "| Out-File $outputFileName -Append
-$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockLogging -ErrorAction SilentlyContinue # registry containing script-block logging setting - in computer-space
-if($null -eq $temp -or $temp.EnableScriptBlockLogging -ne 1){
-    $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockLogging -ErrorAction SilentlyContinue # registry containing script-block logging setting - in user-space
-    if($null -ne $temp -and $temp.EnableScriptBlockLogging -eq 1){
-        $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockInvocationLogging -ErrorAction SilentlyContinue # registry containing script-block Invocation logging setting - in user-space
-        if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
-            " > PowerShell - Script Block logging is enabled but Invocation logging is not enforced - only on user" | Out-File $outputFileName -Append
-        }
-        else{
-            " > PowerShell - Script Block logging is enforced - only on user" | Out-File $outputFileName -Append
-        }
-    }
-    else{
-        " > PowerShell - Script Block logging is not enforced"| Out-File $outputFileName -Append
-    }
-}
-else{
-    $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockInvocationLogging -ErrorAction SilentlyContinue # registry containing script-block Invocation logging setting - in computer-space
-    if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
-        " > PowerShell - Script Block logging is enabled but Invocation logging is not enforced" | Out-File $outputFileName -Append
-    }
-    else{
-        " > PowerShell - Script Block logging is enabled" | Out-File $outputFileName -Append
-    }
-}
-# --- End of ScriptBlock logging
-# --- Start Transcription logging 
-"--- PowerShell Transcripting logging: "| Out-File $outputFileName -Append
-$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableTranscripting -ErrorAction SilentlyContinue # registry containing transcripting logging setting - computer-space
-$bollCheck = $false
-if($null -eq $temp -or $temp.EnableTranscripting -ne 1){
-    $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableTranscripting -ErrorAction SilentlyContinue # registry containing transcripting logging setting - user-space
-    if($null -ne $temp -and $temp.EnableTranscripting -eq 1){
-        $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableInvocationHeader -ErrorAction SilentlyContinue # registry containing transcripting Invocation-Header logging setting - user-space
-        if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
-            " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced" | Out-File $outputFileName -Append
-            $bollCheck = $True
-        }
-        $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name OutputDirectory -ErrorAction SilentlyContinue # registry containing transcripting output directory logging setting - user-space
-        if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
-            " > PowerShell - Transcription logging is enforced but no folder is set to save the log" | Out-File $outputFileName -Append
-            $bollCheck = $True
-        }
-        if(!$bollCheck){
-            " > Powershell - Transcription logging is enforced currectly but only on the user" | Out-File $outputFileName -Append
-            $bollCheck = $True
-        }
-    }
-    else{
-        " > PowerShell - Transcription logging is not enforced (logging input and outpot of powershell command)" | Out-File $outputFileName -Append
-        $bollCheck = $True
-    }
-}
-else{
-    $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableInvocationHeader -ErrorAction SilentlyContinue # registry containing transcripting Invocation-Header logging setting - computer-space
-    if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
-        " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced" | Out-File $outputFileName -Append
-        $bollCheck = $True
-    }
-    $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name OutputDirectory -ErrorAction SilentlyContinue # registry containing transcripting output directory logging setting - computer-space
-    if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
-        " > PowerShell - Transcription logging is enabled but no folder is set to save the log" | Out-File $outputFileName -Append
-        $bollCheck = $True
-    }
-}
-if(!$bollCheck){
-    " > PowerShell - Transcription logging is enabled and configured currectly" | Out-File $outputFileName -Append
-}
-
+checkPowrshellAudit -name "Audit-Policy"
 
 # Check always install elevated setting
-writeToScreen -str "Getting Always install with elevation setting..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
-"`n============= Always install elevated Check =============" | Out-File $outputFileName -Append
-"checking if GPO is configured to force installation as administrator - can be used by an attacker`n" | Out-File $outputFileName -Append
-$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
-if($null -eq $temp){
-    ' > No GPO for for "Always install with elevation"' | Out-File $outputFileName -Append
-}
-elseif ($temp.AlwaysInstallElevated -eq 1) {
-    ' > Always install with elevated is enabled - this is a finding!' | Out-File $outputFileName -Append
-}
-else{
-    ' > GPO for "Always install with elevated" is existing but not forceing installing with elevation' | Out-File $outputFileName -Append
-}
-
-
+checkInstallElevated -name "Domain-Hardning"
 
 # get various system info (can take a few seconds)
-writeToScreen -str "Running systeminfo..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Systeminfo_$hostname.txt"
-# Get-ComputerInfo exists only in PowerShell 5.1 and above
-if ($PSVersionTable.PSVersion.ToString() -ge 5.1)
-{
-    "============= Get-ComputerInfo =============" | Out-File $outputFileName -Append
-    Get-ComputerInfo | Out-File $outputFileName -Append
-}
-"`n`n============= systeminfo =============" | Out-File $outputFileName -Append
-systeminfo >> $outputFileName
+dataSystemInfo -name "Systeminfo"
 
 #########################################################
 
