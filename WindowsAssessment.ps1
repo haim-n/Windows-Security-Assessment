@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.17" # used for logging purposes
+$Version = "1.18" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -90,6 +90,12 @@ Controls Checklist:
 @Haim Nachmias
 ##########################################################>
 
+###Genral Vals
+# get hostname to use as the folder name and file names
+$hostname = hostname
+$folderLocation = $hostname
+# get the windows version for later use
+$winVersion = [System.Environment]::OSVersion.Version
 
 ### functions
 #function to write to screen
@@ -97,6 +103,9 @@ function writeToScreen {
     param (
         $str,$ForegroundColor
     )
+    if($null -eq $ForegroundColor){
+        $ForegroundColor = Yellow
+    }
     Write-Host $str -ForegroundColor $ForegroundColor
 }
 
@@ -124,24 +133,848 @@ function writeToLog {
     writeToFile -path $hostname -file "Log_$hostname.txt" -str $logMassage
 }
 
+function getNameForFile{
+    param(
+        $name,
+        $extention
+    )
+    if($null -eq $extention){
+        $extention = ".txt"
+    }
+    return ($name + "_" + $hostname+$extention)
+}
+# get current user privileges
+function dataWhoAmI {
+    param (
+        $name 
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Running whoami..." -ForegroundColor Yellow
+    writeToLog -str "running DataWhoAmI function"
+    writeToFile -file $outputFile -path $folderLocation -str "`Output of `"whoami /all`" command:`n"
+    # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
+    #$PrevErrorActionPreference = $ErrorActionPreference
+    #$ErrorActionPreference = "SilentlyContinue"
+    if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!(Test-ComputerSecureChannel)))
+        {
+            writeToFile -file $outputFile -path $folderLocation -str (whoami /user /groups /priv)
+        }
+    else
+        {
+            writeToFile -file $outputFile -path $folderLocation -str (whoami /all)
+        }
+    #$ErrorActionPreference = $PrevErrorActionPreference
+    writeToFile -file $outputFile -path $folderLocation -str "`n========================================================================================================" 
+    writeToFile -file $outputFile -path $folderLocation -str "`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:"
+    writeToFile -file $outputFile -path $folderLocation -str "`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " 
+    writeToFile -file $outputFile -path $folderLocation -str "`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens"
+}
+
+# get IP settings
+function dataIpSettings {
+    param (
+        $name 
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Running ipconfig..." -ForegroundColor Yellow
+    writeToLog -str "running DataIpSettings function"
+    writeToFile -file $outputFile -path $folderLocation -str "`Output of `"ipconfig /all`" command:`n" 
+    writeToFile -file $outputFile -path $folderLocation -str (ipconfig /all) 
+}
+
+# test for internet connectivity
+function checkInternetAccess{
+    param (
+        $name 
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkInternetAccess function"
+    writeToScreen -str "Trying to ping the internet..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= ping -n 2 8.8.8.8 =============" 
+    writeToFile -file $outputFile -path $folderLocation -str (ping -n 2 8.8.8.8)
+    # more detailed test for newer PowerShell versions - takes a lot of time and not very important
+    #try {
+        # "============= Test-NetConnection -InformationLevel Detailed =============" | Out-File $outputFileName -Append
+        # Test-NetConnection -InformationLevel Detailed | Out-File $outputFileName -Append
+        #"============= Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed =============" | Out-File $outputFileName -Append
+        #Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed | Out-File $outputFileName -Append
+    #}
+    #catch {"Test-NetConnection command doesn't exists, old powershell version." | Out-File $outputFileName -Append}
+}
+
+# get network connections (run-as admin is required for -b associated application switch)
+function getNetCon {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running getNetCon function"
+    writeToScreen -str "Running netstat..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= netstat -nao ============="
+    writeToFile -file $outputFile -path $folderLocation -str (netstat -nao)
+    writeToFile -file $outputFile -path $folderLocation -str "============= netstat -naob (includes process name, elevated admin permission is required ============="
+    writeToFile -file $outputFile -path $folderLocation -str (netstat -naob)
+# "============= netstat -ao  =============" | Out-File $outputFileName  -Append
+# netstat -ao | Out-File $outputFileName -Append  # shows server names, but takes a lot of time and not very important
+}
+
+#get gpo
+function dataGPO {
+    param (
+        $name
+    )
+    writeToLog -str "running dataGPO function"
+    # check if the computer is in a domain
+    if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
+    {
+        # check if we have connectivity to the domain, or if is a DC
+        if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
+        {
+            $gpoPath = $folderLocation+"\"+(getNameForFile -name $name -extention ".html")
+            writeToScreen -str "Running GPResult to get GPOs..." -ForegroundColor Yellow
+            gpresult /f /h $gpoPath
+            # /h doesn't exists on Windows 2003, so we run without /h into txt file
+            if (!(Test-Path $gpoPath)) {
+                writeToLog -str "dataGPO function: gpresult faild to export to HTML exporting in txt format"
+                $gpoPath = $folderLocation+"\"+(getNameForFile -name $name -extention ".txt")
+                gpresult $gpoPath
+            }
+            else{
+                writeToLog -str "dataGPO function: gpresult exported successfully "
+            }
+        }
+        else
+        {
+            writeToScreen -str "Unable to get GPO configuration... the computer is not connected to the domain" -ForegroundColor Red
+            writeToLog -str "dataGPO function: Unable to get GPO configuration... the computer is not connected to the domain "
+        }
+    }
+}
+
+# get security policy settings (secpol.msc), run as admin is required
+function dataSecurityPolicy {
+    param (
+        $name
+    )
+    writeToLog -str "running dataSecurityPolicy function"
+    # to open the *.inf output file, open MMC, add snap-in "Security Templates", right click and choose new path, choose the *.inf file path, and open it
+    $sPPath = $hostname+"\"+(getNameForFile -name $name -extention ".inf")
+    if ($runningAsAdmin)
+    {
+        writeToScreen -str "Getting security policy settings..." -ForegroundColor Yellow
+        secedit /export /CFG $sPPath | Out-Null
+        if(!(Test-Path $sPPath)){
+            writeToLog -str "dataSecurityPolicy function: failed to export security policy unknown resone"
+        }
+    }
+    else
+    {
+        writeToScreen -str "Unable to get security policy settings... elevated admin permissions are required" -ForegroundColor Red
+        writeToLog -str "dataSecurityPolicy function: Unable to get security policy settings... elevated admin permissions are required"
+    }
+}
+
+# get windows features (Windows vista/2008 or above is required)
+function dataWinFeatures {
+    param (
+        $name
+    )
+    writeToLog -str "running dataWinFeatures function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+
+    if ($winVersion.Major -ge 6)
+    {    
+        # first check if we can fetch Windows features in any way - Windows workstation without RunAsAdmin cannot fetch features (also Win2008 but it's rare...)
+        if ((!$runningAsAdmin) -and ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1))
+        {
+            writeToLog -str "dataWinFeatures function: Unable to get Windows features... elevated admin permissions are required"
+            writeToScreen -str "Unable to get Windows features... elevated admin permissions are required" -ForegroundColor Red
+        }
+        else
+        {
+            writeToLog -str "dataWinFeatures function: Getting Windows features..."
+            writeToScreen -str "Getting Windows features..." -ForegroundColor Yellow
+        }
+
+        writeToFile -file $outputFile -path $folderLocation -str "There are several ways of getting the Windows features. Some require elevation. See the following for details: https://hahndorf.eu/blog/WindowsFeatureViaCmd"
+        # get features with Get-WindowsFeature. Requires Windows SERVER 2008R2 or above
+        if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 1)) # version should be 7+ or 6.1+
+        {
+            if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3))
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "============= Output of: Get-WindowsFeature =============" 
+                $temp = Get-WindowsFeature | Format-Table -AutoSize | Out-String
+                writeToFile -file $outputFile -path $folderLocation -str $temp
+            }
+        }
+        # get features with Get-WindowsOptionalFeature. Requires Windows 8/2012 or above and run-as-admin
+        if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)) # version should be 7+ or 6.2+
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "============= Output of: Get-WindowsOptionalFeature -Online ============="
+            if ($runningAsAdmin)
+                {
+                    $temp = Get-WindowsOptionalFeature -Online | Sort-Object FeatureName | Format-Table | Out-String
+                    writeToFile -file $outputFile -path $folderLocation -str $temp
+                }
+            else
+                {writeToFile -file $outputFile -path $folderLocation -str "Unable to run Get-WindowsOptionalFeature without running as admin. Consider running again with elevated admin permissions."}
+        }
+        # get features with dism. Requires run-as-admin
+        writeToFile -file $outputFile -path $folderLocation -str "============= Output of: dism /online /get-features /format:table | ft =============" 
+        if ($runningAsAdmin)
+        {
+            writeToFile -file $outputFile -path $folderLocation -str (dism /online /get-features /format:table)
+        }
+        else
+            {writeToFile -file $outputFile -path $folderLocation -str "Unable to run dism without running as admin. Consider running again with elevated admin permissions." 
+        }
+    } 
+}
+
+# get installed hotfixes (/format:htable doesn't always work)
+function dataInstalledHotfixes {
+    param (
+        $name
+    )
+    writeToLog -str "running dataInstalledHotfixes function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Getting installed hotfixes..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str ("The OS version is: " + [System.Environment]::OSVersion + ". See if this version is supported according to the following pages:")
+    writeToFile -file $outputFile -path $folderLocation -str "https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" 
+    writeToFile -file $outputFile -path $folderLocation -str "https://en.wikipedia.org/wiki/Windows_10_version_history" 
+    writeToFile -file $outputFile -path $folderLocation -str "https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" 
+    writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" 
+    writeToFile -file $outputFile -path $folderLocation -str (Get-HotFix | Sort-Object InstalledOn -Descending -ErrorAction SilentlyContinue )
+    <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
+    if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
+    {
+        writeToScreen -str "Checking for installed hotfixes again... htable format didn't work" -ForegroundColor Yellow
+        Remove-Item $hostname\hotfixes_$hostname.html
+        wmic qfe list > $hostname\hotfixes_$hostname.txt
+    } #>
+    
+}
+
+# get processes (new powershell version and run-as admin are required for IncludeUserName)
+function dataRunningProcess {
+    param (
+        $name
+    )
+    writeToLog -str "running dataRunningProcess function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Getting processes..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str  "Output of `"Get-Process`" PowerShell command:`n"
+    try {
+        writeToFile -file $outputFile -path $folderLocation -str (Get-Process -IncludeUserName | Format-Table -AutoSize ProcessName, id, company, ProductVersion, username, cpu, WorkingSet | Out-String -Width 180 | Out-String) 
+    }
+    # run without IncludeUserName if the script doesn't have elevated permissions or for old powershell versions
+    catch {
+        writeToFile -file $outputFile -path $folderLocation -str (Get-Process | Format-Table -AutoSize ProcessName, id, company, ProductVersion, cpu, WorkingSet | Out-String -Width 180 | Out-String)
+    }
+        
+}
+
+# get services
+function dataServices {
+    param (
+        $name
+    )
+    writeToLog -str "running dataServices function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Getting services..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-WmiObject win32_service`" PowerShell command:`n"
+    writeToFile -file $outputFile -path $folderLocation -str (Get-WmiObject win32_service  | Sort-Object displayname | Format-Table -AutoSize DisplayName, Name, State, StartMode, StartName | Out-String -Width 180 | Out-String)
+}
+
+# get installed software
+function dataInstalledSoftware{
+    param(
+        $name
+    )
+    writeToLog -str "running dataInstalledSoftware function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Getting installed software..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | sort DisplayName | Out-String -Width 180 | Out-String)
+}
+
+# get shared folders (Share permissions are missing for older PowerShell versions)
+function dataSharedFolders{
+    param(
+        $name
+    )
+    writeToLog -str "running dataSharedFolders function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Getting shared folders..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= Shared Folders ============="
+    $shares = Get-WmiObject -Class Win32_Share
+    writeToFile -file $outputFile -path $folderLocation -str $shares
+    # get shared folders + share permissions + NTFS permissions with SmbShare module (exists only in Windows 8 or 2012 and above)
+    foreach ($share in $shares)
+    {
+        $sharePath = $share.Path
+        $shareName = $share.Name
+        writeToFile -file $outputFile -path $folderLocation -str "============= Share Name: $shareName | Share Path: $sharePath =============" 
+        writeToFile -file $outputFile -path $folderLocation -str "Share Permissions:"
+        # Get share permissions with SmbShare module (exists only in Windows 8 or 2012 and above)
+        try
+        {
+            import-module smbshare -ErrorAction SilentlyContinue
+            writeToFile -file $outputFile -path $folderLocation -str ($share | Get-SmbShareAccess | Out-String -Width 180)
+        }
+        catch
+        {
+            $shareSecSettings = Get-WmiObject -Class Win32_LogicalShareSecuritySetting -Filter "Name='$shareName'"
+            if ($null -eq $shareSecSettings)
+                {
+                # Unfortunately, some of the shares security settings are missing from the WMI. Complicated stuff. Google "Count of shares != Count of share security"
+                writeToLog -str "dataSharedFolders function:Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting."
+                writeToFile -file $outputFile -path $folderLocation -str "Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting.`n" }
+            else
+            {
+                $DACLs = (Get-WmiObject -Class Win32_LogicalShareSecuritySetting -Filter "Name='$shareName'" -ErrorAction SilentlyContinue).GetSecurityDescriptor().Descriptor.DACL
+                foreach ($DACL in $DACLs)
+                {
+                    if ($DACL.Trustee.Domain) {$Trustee = $DACL.Trustee.Domain + "\" + $DACL.Trustee.Name}
+                    else {$Trustee = $DACL.Trustee.Name}
+                    $AccessType = [Security.AccessControl.AceType]$DACL.AceType
+                    $FileSystemRights = $DACL.AccessMask -as [Security.AccessControl.FileSystemRights]
+                    writeToFile -file $outputFile -path $folderLocation -str "Trustee: $Trustee | Type: $AccessType | Permission: $FileSystemRights"
+                }
+            }    
+        }
+        writeToFile -file $outputFile -path $folderLocation -str "NTFS Permissions:" 
+        try {
+            writeToFile -file $outputFile -path $folderLocation -str  ((Get-Acl $sharePath).Access | Format-Table | Out-String)
+        }
+        catch {writeToFile -file $outputFile -path $folderLocation -str "No NTFS permissions were found."}
+    }
+}
+
+# get local+domain account policy
+function dataAccountPolicy {
+    param (
+        $name
+    )
+    writeToLog -str "running dataAccountPolicy function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Getting local and domain account policy..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= Local Account Policy ============="
+    writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET ACCOUNTS`" command:`n"
+    writeToFile -file $outputFile -path $folderLocation -str (NET ACCOUNTS)
+    # check if the computer is in a domain
+    writeToFile -file $outputFile -path $folderLocation -str "============= Domain Account Policy ============="
+    if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
+    {
+        if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET ACCOUNTS /domain`" command:`n" 
+            writeToFile -file $outputFile -path $folderLocation -str (NET ACCOUNTS /domain) 
+        }    
+        else
+            {
+                writeToLog -str "dataAccountPolicy function: Error No connection to the domain."
+                writeToFile -file $outputFile -path $folderLocation -str "Error: No connection to the domain." 
+            }
+    }
+    else
+    {
+        writeToLog -str "dataAccountPolicy function: Error The computer is not part of a domain."
+        writeToFile -file $outputFile -path $folderLocation -str "Error: The computer is not part of a domain."
+    }
+}
+
+# get local users + admins
+function dataLocalUsers {
+    param (
+        $name
+    )
+    # only run if no running on a domain controller
+    writeToLog -str "running dataLocalUsers function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2)
+    {
+        writeToScreen -str "Getting local users + administrators..." -ForegroundColor Yellow
+        writeToFile -file $outputFile -path $folderLocation -str "============= Local Administrators ============="
+        writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET LOCALGROUP administrators`" command:`n"
+        writeToFile -file $outputFile -path $folderLocation -str (NET LOCALGROUP administrators)
+        writeToFile -file $outputFile -path $folderLocation -str "============= Local Users ============="
+        # Get-LocalUser exists only in Windows 10 / 2016
+        try
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-LocalUser`" PowerShell command:`n" 
+            writeToFile -file $outputFile -path $folderLocation -str (Get-LocalUser | Format-Table name, enabled, AccountExpires, PasswordExpires, PasswordRequired, PasswordLastSet, LastLogon, description, SID | Out-String -Width 180 | Out-String)
+        }
+        catch
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Getting information regarding local users from WMI.`n"
+            writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-CimInstance win32_useraccount -Namespace `"root\cimv2`" -Filter `"LocalAccount=`'$True`'`"`" PowerShell command:`n"
+            writeToFile -file $outputFile -path $folderLocation -str (Get-CimInstance win32_useraccount -Namespace "root\cimv2" -Filter "LocalAccount='$True'" | Select-Object Caption,Disabled,Lockout,PasswordExpires,PasswordRequired,Description,SID | format-table -autosize | Out-String -Width 180 | Out-String)
+        }
+    }
+    
+}
+
+# check SMB protocol hardening
+function checkSMBHardening {
+    param (
+        $name
+    )
+    writeToLog -str "running checkSMBHardening function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Getting SMB hardening configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= SMB versions Support (Server Settings) =============" 
+    # Check if Windows Vista/2008 or above
+    if ($winVersion.Major -ge 6)
+    {
+        $SMB1 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB1 -ErrorAction SilentlyContinue
+        $SMB2 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB2 -ErrorAction SilentlyContinue
+        $smbServerConfig = Get-SmbServerConfiguration
+        $smbClientConfig = Get-SmbClientConfiguration
+        if ($SMB1.SMB1 -eq 0)
+            {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is not supported (based on registry values). Which is nice." }
+        else
+            {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is supported (based on registry values). Which is pretty bad and a finding." }
+        if (!$smbConfig.EnableSMB1Protocol)
+            {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is not supported (based on Get-SmbServerConfiguration). Which is nice."}
+        else
+            {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is supported (based on Get-SmbServerConfiguration). Which is pretty bad and a finding."}
+            writeToFile -file $outputFile -path $folderLocation -str "---------------------------------------" 
+        if ($SMB2.SMB2 -eq 0)
+            {writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are not supported (based on registry values). Which is weird, but not a finding." }
+        else
+            {writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are supported (based on registry values). Which is OK." }
+        if (!$smbServerConfig.EnableSMB2Protocol)
+            {writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is not supported (based on Get-SmbServerConfiguration). Which is weird, but not a finding." }
+        else
+            {writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is supported (based on Get-SmbServerConfiguration). Which is OK." }
+    }
+    else
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "Old Windows versions (XP or 2003) support only SMB1." 
+    }
+    writeToFile -file $outputFile -path $folderLocation -str "============= SMB versions Support (Client Settings) ============="
+    # Check if Windows Vista/2008 or above
+    if ($winVersion.Major -ge 6)
+    {
+        $SMB1Client = (sc.exe qc lanmanworkstation | Where-Object {$_ -like "*START_TYPE*"}).split(":")[1][1]
+        Switch ($SMB1Client)
+        {
+            "0" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Boot'. Which is weird. Disabled is better." }
+            "1" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'System'. Which is not weird. although disabled is better."}
+            "2" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Automatic' (Enabled). Which is not very good, a possible finding, but not a must."}
+            "3" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Manual' (Turned off, but can be started). Which is pretty good, although disabled is better."}
+            "4" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Disabled'. Which is nice."}
+        }
+    }
+    else
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "Old Windows versions (XP or 2003) support only SMB1."
+    }
+    writeToFile -file $outputFile -path $folderLocation -str "============= SMB Signing (Server Settings) ============="
+    $SmbServerRequireSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters RequireSecuritySignature
+    $SmbServerSupportSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters EnableSecuritySignature
+    if ($SmbServerRequireSigning.RequireSecuritySignature -eq 1)
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (always) = Enabled"
+        writeToFile -file $outputFile -path $folderLocation -str "SMB signing is required by the server, Which is good." 
+    }
+    else
+    {
+        if ($SmbServerSupportSigning.EnableSecuritySignature -eq 1)
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (always) = Disabled" 
+            writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (if client agrees) = Enabled"
+            writeToFile -file $outputFile -path $folderLocation -str "SMB signing is enabled by the server, but not required. Clients of this server are susceptible to man-in-the-middle attacks, if they don't require signing. A possible finding."
+        }
+        else
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (always) = Disabled." 
+            writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (if client agrees) = Disabled." 
+            writeToFile -file $outputFile -path $folderLocation -str "SMB signing is disabled by the server. Clients of this server are susceptible to man-in-the-middle attacks. A finding." 
+        }
+    }
+    # potentially, we can also check SMB signing configuration using PowerShell:
+    <#if ($smbServerConfig -ne $null)
+    {
+        "---------------------------------------" | Out-File $outputFileName -Append
+        "Get-SmbServerConfiguration SMB server-side signing details:" | Out-File $outputFileName -Append
+        $smbServerConfig | fl *sign* | Out-File $outputFileName -Append
+    }#>
+    writeToFile -file $outputFile -path $folderLocation -str "============= SMB Signing (Client Settings) =============" 
+    $SmbClientRequireSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters RequireSecuritySignature
+    $SmbClientSupportSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters EnableSecuritySignature
+    if ($SmbClientRequireSigning.RequireSecuritySignature -eq 1)
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Enabled"
+        writeToFile -file $outputFile -path $folderLocation -str "SMB signing is required by the client, Which is good." 
+    }
+    else
+    {
+        if ($SmbClientSupportSigning.EnableSecuritySignature -eq 1)
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Disabled" 
+            writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (if client agrees) = Enabled"
+            writeToFile -file $outputFile -path $folderLocation -str "SMB signing is enabled by the client, but not required. This computer is susceptible to man-in-the-middle attacks against servers that don't require signing. A possible finding."
+        }
+        else
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Disabled." 
+            writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (if client agrees) = Disabled." 
+            writeToFile -file $outputFile -path $folderLocation -str "SMB signing is disabled by the client. This computer is susceptible to man-in-the-middle attacks. A finding."
+        }
+    }
+    if (($null -ne $smbServerConfig) -and ($null -ne $smbClientConfig)) {
+        # potentially, we can also check SMB signing configuration using PowerShell:
+        <#"---------------------------------------" | Out-File $outputFileName -Append
+        "Get-SmbClientConfiguration SMB client-side signing details:" | Out-File $outputFileName -Append
+        $smbClientConfig | fl *sign* | Out-File $outputFileName -Append #>
+        writeToFile -file $outputFile -path $folderLocation -str "============= Raw Data - Get-SmbServerConfiguration =============" 
+        writeToFile -file $outputFile -path $folderLocation -str ($smbServerConfig | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "============= Raw Data - Get-SmbClientConfiguration ============="
+        writeToFile -file $outputFile -path $folderLocation -str ($smbClientConfig | Out-String)
+    }
+    
+}
+
+# Getting RDP security settings
+function dataRDPSecuirty {
+    param (
+        $name
+    )
+    writeToLog -str "running dataRDPSecuirty function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToScreen -str "Getting RDP security settings..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Settings (from WMI) ============="
+    $WMIFilter = "TerminalName='RDP-tcp'" # there might be issues with the quotation marks - to debug
+    $RDP = Get-WmiObject -class Win32_TSGeneralSetting -Namespace root\cimv2\terminalservices -Filter $WMIFilter
+    writeToFile -file $outputFile -path $folderLocation -str ($RDP | Format-List Terminal*,*Encrypt*, Policy*,Security*,SSL*,*Auth* | Out-String )
+    writeToFile -file $outputFile -path $folderLocation -str "============= NLA (Network Level Authentication) ============="
+    if ($RDP.UserAuthenticationRequired -eq 1)
+        {writeToFile -file $outputFile -path $folderLocation -str "NLA is required, which is fine."}
+    if ($RDP.UserAuthenticationRequired -eq 0)
+        {writeToFile -file $outputFile -path $folderLocation -str "NLA is not required, which is bad. A possible finding."}
+        writeToFile -file $outputFile -path $folderLocation -str "============= Security Layer (SSL/TLS) ============="
+    if ($RDP.SecurityLayer -eq 0)
+        {writeToFile -file $outputFile -path $folderLocation -str "Native RDP encryption is used instead of SSL/TLS, which is bad. A possible finding." }
+    if ($RDP.SecurityLayer -eq 1)
+        {writeToFile -file $outputFile -path $folderLocation -str "SSL/TLS is supported, but not required ('Negotiate' setting). Which is not recommended, but not necessary a finding."}
+    if ($RDP.SecurityLayer -eq 2)
+        {writeToFile -file $outputFile -path $folderLocation -str "SSL/TLS is required for connecting. Which is good."}
+        writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Timeout Settings (from Registry) ============="
+    $RDPTimeout = Get-Item "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" 
+    if ($RDPTimeout.ValueCount -eq 0)
+        {writeToFile -file $outputFile -path $folderLocation -str "RDP timeout is not configured. A possible finding."}
+    else
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "The following RDP timeout properties were configured:" 
+        writeToFile -file $outputFile -path $folderLocation -str ($RDPTimeout |Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "MaxConnectionTime = Time limit for active RDP sessions" 
+        writeToFile -file $outputFile -path $folderLocation -str "MaxIdleTime = Time limit for active but idle RDP sessions"
+        writeToFile -file $outputFile -path $folderLocation -str "MaxDisconnectionTime = Time limit for disconnected RDP sessions" 
+        writeToFile -file $outputFile -path $folderLocation -str "fResetBroken = Log off session (instead of disconnect) when time limits are reached" 
+        writeToFile -file $outputFile -path $folderLocation -str "60000 = 1 minute, 3600000 = 1 hour, etc."
+        writeToFile -file $outputFile -path $folderLocation -str "`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits"
+    } 
+}
+
+# getting credential guard settings (for Windows 10/2016 and above only)
+function dataCredentialGuard {
+    param (
+        $name
+    )
+    writeToLog -str "running dataCredentialGuard function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    if ($winVersion.Major -ge 10)
+    {
+        writeToScreen -str "Getting credential guard settings..." -ForegroundColor Yellow
+        $DevGuard = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard
+        writeToFile -file $outputFile -path $folderLocation -str "============= Credential Guard Settings from WMI ============="
+        if ($null -eq $DevGuard.SecurityServicesConfigured)
+            {writeToFile -file $outputFile -path $folderLocation -str "The WMI query for Device Guard settings has failed. Status unknown."}
+        else {
+            if (($DevGuard.SecurityServicesConfigured -contains 1) -and ($DevGuard.SecurityServicesRunning -contains 1))
+            {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is configured and running. Which is good."}
+        else
+            {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."}    
+        }
+        writeToFile -file $outputFile -path $folderLocation -str "============= Raw Device Guard Settings from WMI (Including Credential Guard) ============="
+        writeToFile -file $outputFile -path $folderLocation -str ($DevGuard | Out-String)
+        $DevGuardPS = Get-ComputerInfo dev*
+        writeToFile -file $outputFile -path $folderLocation -str "============= Credential Guard Settings from Get-ComputerInfo ============="
+        if ($null -eq $DevGuardPS.DeviceGuardSecurityServicesRunning)
+            {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."}
+        else
+        {
+            if ($null -ne ($DevGuardPS.DeviceGuardSecurityServicesRunning | Where-Object {$_.tostring() -eq "CredentialGuard"}))
+                {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is configured and running. Which is good."}
+            else
+                {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."}
+        }
+        writeToFile -file $outputFile -path $folderLocation -str "============= Raw Device Guard Settings from Get-ComputerInfo ============="
+        writeToFile -file $outputFile -path $folderLocation -str ($DevGuardPS | Out-String)
+    }
+    
+}
+
+# getting LSA protection configuration (for Windows 8.1 and above only)
+function dataLSAProtectionConf {
+    param (
+        $name
+    )
+    writeToLog -str "running dataLSAProtectionConf function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
+    {
+        writeToScreen -str "Getting LSA protection settings..." -ForegroundColor Yellow
+        $RunAsPPL = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" RunAsPPL -ErrorAction SilentlyContinue
+        if ($null -eq $RunAsPPL)
+            {writeToFile -file $outputFile -path $folderLocation -str "RunAsPPL registry value does not exists. LSA protection is off . Which is bad and a possible finding."}
+        else
+        {
+            writeToFile -file $outputFile -path $folderLocation -str ("RunAsPPL registry value is: " +$RunAsPPL.RunAsPPL )
+            if ($RunAsPPL.RunAsPPL -eq 1)
+                {writeToFile -file $outputFile -path $folderLocation -str "LSA protection is on. Which is good."}
+            else
+                {writeToFile -file $outputFile -path $folderLocation -str "LSA protection is off. Which is bad and a possible finding."}
+        }
+    }
+    
+}
+
+# search for sensitive information (i.e. cleartext passwords) if the flag exists
+function checkSensitiveInfo {
+    param (
+        $name
+    )   
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    if ($EnableSensitiveInfoSearch)
+    {
+        writeToLog -str "running checkSensitiveInfo function"
+        writeToScreen -str "Searching for sensitive information..." -ForegroundColor Yellow
+        writeToFile -file $outputFile -path $folderLocation -str "============= Looking for clear-text passwords ============="
+        # recursive searches in c:\temp, current user desktop, default IIS website root folder
+        # add any other directory that you want. searching in C:\ may take a while.
+        $paths = "C:\Temp",[Environment]::GetFolderPath("Desktop"),"c:\Inetpub\wwwroot"
+        foreach ($path in $paths)
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "============= recursive search in $path ============="
+            # find txt\ini\config\xml\vnc files with the word password in it, and dump the line
+            # ignore the files outputted during the assessment...
+            $includeFileTypes = @("*.txt","*.ini","*.config","*.xml","*vnc*")
+            writeToFile -file $outputFile -path $folderLocation -str (Get-ChildItem -Path $path -Include $includeFileTypes -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -notlike "*_$hostname.txt"} | Select-String -Pattern password | Out-String)
+            # find files with the name pass\cred\config\vnc\p12\pfx and dump the whole file, unless it is too big
+            # ignore the files outputted during the assessment...
+            $includeFilePatterns = @("*pass*","*cred*","*config","*vnc*","*p12","*pfx")
+            $files = Get-ChildItem -Path $path -Include $includeFilePatterns -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -notlike "*_$hostname.txt"}
+            foreach ($file in $files)
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "------------- $file -------------"
+                $fileSize = (Get-Item $file.FullName).Length
+                if ($fileSize -gt 300kb) {writeToFile -file $outputFile -path $folderLocation -str ("The file is too large to copy (" + [math]::Round($filesize/(1mb),2) + " MB).") }
+                else {writeToFile -file $outputFile -path $folderLocation -str (Get-Content $file.FullName)}
+            }
+        }
+    }
+    
+}
+
+# get anti-virus status
+function checkAntiVirusStatus {
+    param (
+        $name
+    )
+    # works only on Windows Clients, Not on Servers (2008, 2012, etc.). Maybe the "Get-MpPreference" could work on servers - wasn't tested.
+    writeToLog -str "running checkAntiVirusStatus function"
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
+    {
+        writeToScreen -str "Getting Anti-Virus status..." -ForegroundColor Yellow
+        if ($winVersion.Major -ge 6)
+        {
+            $AntiVirusProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiVirusProduct
+            $FirewallProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class FirewallProduct
+            $AntiSpywareProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiSpywareProduct
+            writeToFile -file $outputFile -path $folderLocation -str "Security products status was taken from WMI values on WMI namespace `"root\SecurityCenter2`".`n"
+        }
+        else
+        {
+            $AntiVirusProducts = Get-WmiObject -Namespace root\SecurityCenter -Class AntiVirusProduct
+            $FirewallProducts = Get-WmiObject -Namespace root\SecurityCenter -Class FirewallProduct
+            $AntiSpywareProducts = Get-WmiObject -Namespace root\SecurityCenter -Class AntiSpywareProduct
+            writeToFile -file $outputFile -path $folderLocation -str "Security products status was taken from WMI values on WMI namespace `"root\SecurityCenter`".`n"
+        }
+        if ($null -eq $AntiVirusProducts)
+            {writeToFile -file $outputFile -path $folderLocation -str "No Anti Virus products were found."}
+            writeToFile -file $outputFile -path $folderLocation -str "============= Anti-Virus Products Status ============="
+        foreach ($av in $AntiVirusProducts)
+        {    
+            writeToFile -file $outputFile -path $folderLocation -str ("Product Display name: " + $av.displayname )
+            writeToFile -file $outputFile -path $folderLocation -str ("Product Executable: " + $av.pathToSignedProductExe )
+            writeToFile -file $outputFile -path $folderLocation -str ("Time Stamp: " + $av.timestamp)
+            writeToFile -file $outputFile -path $folderLocation -str ("Product (raw) state: " + $av.productState)
+            # check the product state
+            $hx = '0x{0:x}' -f $av.productState
+            if ($hx.Substring(3,2) -match "00|01")
+                {writeToFile -file $outputFile -path $folderLocation -str "AntiVirus is NOT enabled" }
+            else
+                {writeToFile -file $outputFile -path $folderLocation -str "AntiVirus is enabled"}
+            if ($hx.Substring(5) -eq "00")
+                {writeToFile -file $outputFile -path $folderLocation -str "Virus definitions are up to date"}
+            else
+                {writeToFile -file $outputFile -path $folderLocation -str "Virus definitions are NOT up to date"}
+        }
+        writeToFile -file $outputFile -path $folderLocation -str "============= Anti-Virus Products Status (Raw Data) ============="
+        writeToFile -file $outputFile -path $folderLocation -str ($AntiVirusProducts |Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "============= Firewall Products Status (Raw Data) =============" 
+        writeToFile -file $outputFile -path $folderLocation -str ($FirewallProducts | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "============= Anti-Spyware Products Status (Raw Data) =============" 
+        writeToFile -file $outputFile -path $folderLocation -str ($AntiSpywareProducts | Out-String)
+        # check Windows Defender settings
+        writeToFile -file $outputFile -path $folderLocation -str "============= Windows Defender Settings Status =============`n"
+        $WinDefenderSettings = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager"
+        switch ($WinDefenderSettings.AllowRealtimeMonitoring)
+        {
+            $null {writeToFile -file $outputFile -path $folderLocation -str "AllowRealtimeMonitoring registry value was not found." }
+            0 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Real Time Monitoring is off."}
+            1 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Real Time Monitoring is on."}
+        }
+        switch ($WinDefenderSettings.EnableNetworkProtection)
+        {
+            $null {writeToFile -file $outputFile -path $folderLocation -str "EnableNetworkProtection registry value was not found." }
+            0 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is off." }
+            1 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is on."}
+            2 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is set to audit mode."}
+        }
+        writeToFile -file $outputFile -path $folderLocation -str "---------------------------------"
+        writeToFile -file $outputFile -path $folderLocation -str "Values under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager:"
+        writeToFile -file $outputFile -path $folderLocation -str ($WinDefenderSettings | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
+        writeToFile -file $outputFile -path $folderLocation -str "Raw output of Get-MpPreference (Defender settings):"
+        $MpPreference = Get-MpPreference
+        writeToFile -file $outputFile -path $folderLocation -str ($MpPreference | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
+        $MpComputerStatus = Get-MpComputerStatus
+        writeToFile -file $outputFile -path $folderLocation -str "Enabled Defender features:" 
+        writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Format-List *enabled* | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "Defender Tamper Protection:"
+        writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Format-List *tamper* | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "Raw output of Get-MpComputerStatus:"
+        writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
+        writeToFile -file $outputFile -path $folderLocation -str "Attack Surface Reduction Rules Ids:"
+        writeToFile -file $outputFile -path $folderLocation -str ($MpPreference.AttackSurfaceReductionRules_Ids | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "Attack Surface Reduction Rules Actions:"
+        writeToFile -file $outputFile -path $folderLocation -str ($MpPreference.AttackSurfaceReductionRules_Actions | Out-String)
+        writeToFile -file $outputFile -path $folderLocation -str "Attack Surface Reduction Only Exclusions:" 
+        writeToFile -file $outputFile -path $folderLocation -str $MpPreference.AttackSurfaceReductionOnlyExclusions
+    }
+}
+
+# get Windows Firewall configuration
+function dataWinFirewall {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running dataWinFirewall function"
+    writeToScreen -str "Getting Windows Firewall configuration..." -ForegroundColor Yellow
+    if ((Get-Service mpssvc).status -eq "Running")
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "The Windows Firewall service is running."
+        # The NetFirewall commands are supported from Windows 8/2012 (version 6.2)
+        if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
+        { 
+            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
+            writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallProfile is:"
+            writeToFile -file $outputFile -path $folderLocation -str Get-NetFirewallProfile -PolicyStore ActiveStore | Out-String   
+            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
+            writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information there."
+            $temp = $folderLocation + "\" + (getNameForFile -name name -extention ".csv")
+            #Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $temp -NoTypeInformation - removed replaced by Nir's Offer
+            writeToLog -str "dataWinFirewall function: Exporting to CSV"
+            Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object { $_.Enabled -eq $True } | Select-Object -Property PolicyStoreSourceType, Name, DisplayName, DisplayGroup,
+            @{Name='Protocol';Expression={($PSItem | Get-NetFirewallPortFilter).Protocol}},
+            @{Name='LocalPort';Expression={($PSItem | Get-NetFirewallPortFilter).LocalPort}},
+            @{Name='RemotePort';Expression={($PSItem | Get-NetFirewallPortFilter).RemotePort}},
+            @{Name='RemoteAddress';Expression={($PSItem | Get-NetFirewallAddressFilter).RemoteAddress}},
+            @{Name='Service';Expression={($PSItem | Get-NetFirewallServiceFilter).Service}},
+            @{Name='Program';Expression={($PSItem | Get-NetFirewallApplicationFilter).Program}},
+            @{Name='Package';Expression={($PSItem | Get-NetFirewallApplicationFilter).Package}},
+            Enabled, Profile, Direction, Action | export-csv -NoTypeInformation $temp
+        }
+        if ($runningAsAdmin)
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
+            writeToLog -str "dataWinFirewall function: Exporting to wfw" 
+            $temp = $folderLocation + "\" + (getNameForFile -name name -extention ".wfw")
+            netsh advfirewall export $temp | Out-Null
+            writeToFile -file $outputFile -path $folderLocation -str "Firewall rules exported into $temp" 
+            writeToFile -file $outputFile -path $folderLocation -str "To view it, open gpmc.msc in a test environment, create a temporary GPO, get to Computer=>Policies=>Windows Settings=>Security Settings=>Windows Firewall=>Right click on Firewall icon=>Import Policy"
+        }
+    }
+    else
+    {
+        writeToFile -file $outputFile -path $folderLocation -str "The Windows Firewall service is not running." 
+    }
+}
+
+# check if LLMNR and NETBIOS-NS are enabled
+function checkLLMNRAndNetBIOS {
+    param (
+        $name
+    )
+    # LLMNR and NETBIOS-NS are insecure legacy protocols for local multicast DNS queries that can be abused by Responder/Inveigh
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkLLMNRAndNetBIOS function"
+    writeToScreen -str "Getting LLMNR and NETBIOS-NS configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= LLMNR Configuration ============="
+    writeToFile -file $outputFile -path $folderLocation -str "GPO Setting: Computer Configuration -> Administrative Templates -> Network -> DNS Client -> Enable Turn Off Multicast Name Resolution"
+    $LLMNR = Get-ItemProperty "HKLM:\Software\policies\Microsoft\Windows NT\DNSClient" EnableMulticast -ErrorAction SilentlyContinue
+    $LLMNR_Enabled = $LLMNR.EnableMulticast
+    writeToFile -file $outputFile -path $folderLocation -str "Registry Setting: `"HKLM:\Software\policies\Microsoft\Windows NT\DNSClient`" -> EnableMulticast = $LLMNR_Enabled"
+    if ($LLMNR_Enabled -eq 0)
+        {writeToFile -file $outputFile -path $folderLocation -str "LLMNR is disabled, which is secure."}
+    else
+        {writeToFile -file $outputFile -path $folderLocation -str "LLMNR is enabled, which is a finding, especially for workstations."}
+        writeToFile -file $outputFile -path $folderLocation -str "============= NETBIOS Name Service Configuration ============="
+        writeToFile -file $outputFile -path $folderLocation -str "Checking the NETBIOS Node Type configuration - see 'https://getadmx.com/?Category=KB160177#' for details...`n"
+    $NodeType = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Services\NetBT\Parameters" NodeType -ErrorAction SilentlyContinue).NodeType
+    if ($NodeType -eq 2)
+        {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server), which is secure."}
+    else
+    {
+        switch ($NodeType)
+        {
+            $null {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to the default setting (broadcast queries), which is not secure and a finding."}
+            1 {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to B-node (broadcast queries), which is not secure and a finding."}
+            4 {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to M-node (broadcasts first, then queries the WINS name server), which is not secure and a finding."}
+            8 {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to H-node (queries the WINS name server first, then broadcasts), which is not secure and a finding."}        
+        }
+
+        writeToFile -file $outputFile -path $folderLocation -str "Checking the NETBIOS over TCP/IP configuration for each network interface."
+        writeToFile -file $outputFile -path $folderLocation -str "Network interface properties -> IPv4 properties -> Advanced -> WINS -> NetBIOS setting"
+        writeToFile -file $outputFile -path $folderLocation -str "`nNetbiosOptions=0 is default, and usually means enabled, which is not secure and a possible finding."
+        writeToFile -file $outputFile -path $folderLocation -str "NetbiosOptions=1 is enabled, which is not secure and a possible finding."
+        writeToFile -file $outputFile -path $folderLocation -str "NetbiosOptions=2 is disabled, which is secure."
+        writeToFile -file $outputFile -path $folderLocation -str "If NetbiosOptions is set to 2 for the main interface, NetBIOS Name Service is protected against poisoning attacks even though the NodeType is not set to P-node, and this is not a finding."
+        $interfaces = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_*" NetbiosOptions -ErrorAction SilentlyContinue
+        writeToFile -file $outputFile -path $folderLocation -str ($interfaces | Select-Object PSChildName,NetbiosOptions | Out-String)
+    }
+    
+}
 
 ### start of script
 $startTime = Get-Date
 writeToScreen -str "Hello dear user!" -ForegroundColor "Green"
 writeToScreen -str "This script will output the results to a folder or a zip file with the computer name." -ForegroundColor "Green"
 #check if running as an elevated admin
-$runningAsAdmin = (whoami /groups | select-string S-1-16-12288) -ne $null
+$runningAsAdmin = $null -ne (whoami /groups | select-string S-1-16-12288)
 if (!$runningAsAdmin)
     {writeToScreen -str "Please run the script as an elevated admin, or else some output will be missing! :-(" -ForegroundColor Red}
 
-# get hostname to use as the folder name and file names
-$hostname = hostname
-# get the windows version for later use
-$winVersion = [System.Environment]::OSVersion.Version
-
 # remove old folder and create new one
 Remove-Item $hostname -Recurse -ErrorAction SilentlyContinue
-New-Item $hostname -type directory -ErrorAction SilentlyContinue | Out-Null
+New-Item $folderLocation -type directory -ErrorAction SilentlyContinue | Out-Null
 
 # output log
 writeToLog -str "Computer Name: $hostname"
@@ -167,670 +1000,70 @@ writeToLog -str ("Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:s
 #########################################################
 
 # get current user privileges
-writeToScreen -str "Running whoami..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Whoami_$hostname.txt"
-"`nOutput of `"whoami /all`" command:`n" | Out-File $outputFileName -Append
-# when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
-#$PrevErrorActionPreference = $ErrorActionPreference
-#$ErrorActionPreference = "SilentlyContinue"
-if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!(Test-ComputerSecureChannel)))
-    {whoami /user /groups /priv | Out-File $outputFileName -Append}
-else
-    {whoami /all | Out-File $outputFileName -Append}
-#$ErrorActionPreference = $PrevErrorActionPreference
-"`n========================================================================================================" | Out-File $outputFileName -Append
-"`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:" | Out-File $outputFileName -Append
-"`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " | Out-File $outputFileName -Append
-"`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens" | Out-File $outputFileName -Append
+dataWhoAmI -name "Whoami"
 
 # get IP settings
-writeToScreen -str "Running ipconfig..." -ForegroundColor Yellow
-$outputFileName = "$hostname\ipconfig_$hostname.txt"
-"`nOutput of `"ipconfig /all`" command:`n" | Out-File $outputFileName -Append
-ipconfig /all | Out-File $outputFileName -Append
+dataIpSettings -name "ipconfig"
 
 # test for internet connectivity
-writeToScreen -str "Trying to ping the internet..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Internet-Connectivity_$hostname.txt"
-"============= ping -n 2 8.8.8.8 =============" | Out-File $outputFileName -Append
-ping -n 2 8.8.8.8 | Out-File $outputFileName -Append
-# more detailed test for newer PowerShell versions - takes a lot of time and not very important
-#try {
-    # "============= Test-NetConnection -InformationLevel Detailed =============" | Out-File $outputFileName -Append
-    # Test-NetConnection -InformationLevel Detailed | Out-File $outputFileName -Append
-    #"============= Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed =============" | Out-File $outputFileName -Append
-    #Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed | Out-File $outputFileName -Append
-#}
-#catch {"Test-NetConnection command doesn't exists, old powershell version." | Out-File $outputFileName -Append}
+checkInternetAccess -name "Internet-Connectivity"
 
 # get network connections (run-as admin is required for -b associated application switch)
-$outputFileName = "$hostname\Netstat_$hostname.txt"
-writeToScreen -str "Running netstat..." -ForegroundColor Yellow
-"`n============= netstat -nao =============" | Out-File $outputFileName -Append
-netstat -nao | Out-File $outputFileName -Append
-"`n============= netstat -naob (includes process name, elevated admin permission is required =============" | Out-File $outputFileName -Append
-netstat -naob | Out-File $outputFileName -Append
-# "============= netstat -ao  =============" | Out-File $outputFileName  -Append
-# netstat -ao | Out-File $outputFileName -Append  # shows server names, but takes a lot of time and not very important
+getNetCon -name "Netstat"
 
 # get GPOs
-# check if the computer is in a domain
-$outputFileName = "$hostname\gpresult_$hostname.html"
-if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
-{
-    # check if we have connectivity to the domain, or if is a DC
-    if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
-    {
-        writeToScreen -str "Running GPResult to get GPOs..." -ForegroundColor Yellow
-        gpresult /f /h $outputFileName
-        # /h doesn't exists on Windows 2003, so we run without /h into txt file
-        if (!(Test-Path $outputFileName)) {gpresult $hostname\gpresult_$hostname.txt}
-    }
-    else
-    {
-        writeToScreen -str "Unable to get GPO configuration... the computer is not connected to the domain" -ForegroundColor Red
-    }
-}
+dataGPO -name "gpresult"
 
 # get security policy settings (secpol.msc), run as admin is required
-# to open the *.inf output file, open MMC, add snap-in "Security Templates", right click and choose new path, choose the *.inf file path, and open it
-$outputFileName = "$hostname\Security-Policy_$hostname.inf"
-if ($runningAsAdmin)
-{
-    writeToScreen -str "Getting security policy settings..." -ForegroundColor Yellow
-    secedit /export /CFG $outputFileName | Out-Null
-}
-else
-{
-    writeToScreen -str "Unable to get security policy settings... elevated admin permissions are required" -ForegroundColor Red
-}
-
-# get audit policy (Windows vista/2008 & run-as admin are required)
-$outputFileName = "$hostname\Audit-Policy_$hostname.txt"
-if ($winVersion.Major -ge 6)
-{
-    if ($runningAsAdmin)
-    {
-        writeToScreen -str "Getting audit policy settings..." -ForegroundColor Yellow
-        "`nOutput of `"auditpol /get /category:*`" command:`n" | Out-File $outputFileName -Append
-        auditpol /get /category:* | Out-File $outputFileName -Append
-    }
-    else
-    {
-        writeToScreen -str "Unable to get audit policy... elevated admin permissions are required" -ForegroundColor Red
-        "Unable to get audit policy without running as admin. Consider running again with elevated admin permissions." | Out-File $outputFileName -Append
-    }
-}
+dataSecurityPolicy -name "Security-Policy"
 
 # get windows features (Windows vista/2008 or above is required)
-$outputFileName = "$hostname\Windows-Features_$hostname.txt"
-if ($winVersion.Major -ge 6)
-{    
-    # first check if we can fetch Windows features in any way - Windows workstation without RunAsAdmin cannot fetch features (also Win2008 but it's rare...)
-    if ((!$runningAsAdmin) -and ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1))
-    {
-        writeToScreen -str "Unable to get Windows features... elevated admin permissions are required" -ForegroundColor Red
-    }
-    else
-    {
-        writeToScreen -str "Getting Windows features..." -ForegroundColor Yellow
-    }
-
-    "There are several ways of getting the Windows features. Some require elevation. See the following for details: https://hahndorf.eu/blog/WindowsFeatureViaCmd" | Out-File $outputFileName -Append
-    # get features with Get-WindowsFeature. Requires Windows SERVER 2008R2 or above
-    if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 1)) # version should be 7+ or 6.1+
-    {
-        if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3))
-        {
-            "`n============= Output of: Get-WindowsFeature =============" | Out-File $outputFileName -Append
-            Get-WindowsFeature | ft -AutoSize | Out-File $outputFileName -Append
-        }
-    }
-    # get features with Get-WindowsOptionalFeature. Requires Windows 8/2012 or above and run-as-admin
-    if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)) # version should be 7+ or 6.2+
-    {
-        "`n============= Output of: Get-WindowsOptionalFeature -Online =============" | Out-File $outputFileName -Append
-        if ($runningAsAdmin)
-            {Get-WindowsOptionalFeature -Online | sort FeatureName | ft | Out-File $outputFileName -Append}
-        else
-            {"Unable to run Get-WindowsOptionalFeature without running as admin. Consider running again with elevated admin permissions." | Out-File $outputFileName -Append}
-    }
-    # get features with dism. Requires run-as-admin
-    "`n============= Output of: dism /online /get-features /format:table | ft =============" | Out-File $outputFileName -Append
-    if ($runningAsAdmin)
-    {
-        dism /online /get-features /format:table | Out-File $outputFileName -Append
-    }
-    else
-        {"Unable to run dism without running as admin. Consider running again with elevated admin permissions." | Out-File $outputFileName -Append}
-}
+dataWinFeatures -name "Windows-Features"
 
 # get installed hotfixes (/format:htable doesn't always work)
-$outputFileName = "$hostname\Hotfixes_$hostname.txt"
-writeToScreen -str "Getting installed hotfixes..." -ForegroundColor Yellow
-"`nThe OS version is: " + [System.Environment]::OSVersion + ". See if this version is supported according to the following pages:" | Out-File $outputFileName -Append
-"https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" | Out-File $outputFileName -Append
-"https://en.wikipedia.org/wiki/Windows_10_version_history" | Out-File $outputFileName -Append
-"https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" | Out-File $outputFileName -Append
-"`nOutput of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" | Out-File $outputFileName -Append
-Get-HotFix | sort InstalledOn -Descending -ErrorAction SilentlyContinue | Out-File $outputFileName -Append
-<# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
-if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
-{
-    writeToScreen -str "Checking for installed hotfixes again... htable format didn't work" -ForegroundColor Yellow
-    Remove-Item $hostname\hotfixes_$hostname.html
-    wmic qfe list > $hostname\hotfixes_$hostname.txt
-} #>
+dataInstalledHotfixes -name "Hotfixes"
 
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
-writeToScreen -str "Getting processes..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Process-list_$hostname.txt"
-"`nOutput of `"Get-Process`" PowerShell command:`n" | Out-File $outputFileName -Append
-try {Get-Process -IncludeUserName | ft -AutoSize ProcessName, id, company, ProductVersion, username, cpu, WorkingSet | Out-String -Width 180 | Out-File $outputFileName -Append}
-# run without IncludeUserName if the script doesn't have elevated permissions or for old powershell versions
-catch {Get-Process | ft -AutoSize ProcessName, id, company, ProductVersion, cpu, WorkingSet | Out-String -Width 180 | Out-File $outputFileName -Append}
+dataRunningProcess -name "Process-list"
 
 # get services
-writeToScreen -str "Getting services..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Services_$hostname.txt"
-"`nOutput of `"Get-WmiObject win32_service`" PowerShell command:`n" | Out-File $outputFileName -Append
-Get-WmiObject win32_service  | Sort displayname | ft -AutoSize DisplayName, Name, State, StartMode, StartName | Out-String -Width 180 | Out-File $outputFileName -Append
+dataServices -name "Services"
 
 # get installed software
-writeToScreen -str "Getting installed software..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Software_$hostname.txt"
-Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | sort DisplayName | Out-String -Width 180 | Out-File $outputFileName
+dataInstalledSoftware -name "Software"
 
 # get shared folders (Share permissions are missing for older PowerShell versions)
-writeToScreen -str "Getting shared folders..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Shares_$hostname.txt"
-"============= Shared Folders =============" | Out-File $outputFileName -Append
-$shares = Get-WmiObject -Class Win32_Share
-$shares | Out-File $outputFileName -Append
-# get shared folders + share permissions + NTFS permissions with SmbShare module (exists only in Windows 8 or 2012 and above)
-foreach ($share in $shares)
-{
-    $sharePath = $share.Path
-    $shareName = $share.Name
-    "`n============= Share Name: $shareName | Share Path: $sharePath =============" | Out-File $outputFileName -Append
-    "Share Permissions:" | Out-File $outputFileName -Append
-    # Get share permissions with SmbShare module (exists only in Windows 8 or 2012 and above)
-    try
-    {
-        import-module smbshare -ErrorAction SilentlyContinue
-        $share | Get-SmbShareAccess | Out-String -Width 180 | Out-File $outputFileName -Append
-    }
-    catch
-    {
-        $shareSecSettings = Get-WmiObject -Class Win32_LogicalShareSecuritySetting -Filter "Name='$shareName'"
-        if ($shareSecSettings -eq $null)
-            {
-            # Unfortunately, some of the shares security settings are missing from the WMI. Complicated stuff. Google "Count of shares != Count of share security"
-            "Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting.`n" | Out-File $outputFileName -Append}
-        else
-        {
-            $DACLs = (Get-WmiObject -Class Win32_LogicalShareSecuritySetting -Filter "Name='$shareName'" -ErrorAction SilentlyContinue).GetSecurityDescriptor().Descriptor.DACL
-            foreach ($DACL in $DACLs)
-            {
-                if ($DACL.Trustee.Domain) {$Trustee = $DACL.Trustee.Domain + "\" + $DACL.Trustee.Name}
-                else {$Trustee = $DACL.Trustee.Name}
-                $AccessType = [Security.AccessControl.AceType]$DACL.AceType
-                $FileSystemRights = $DACL.AccessMask -as [Security.AccessControl.FileSystemRights]
-                "Trustee: $Trustee | Type: $AccessType | Permission: $FileSystemRights" | Out-File $outputFileName -Append
-            }
-        }    
-    }
-    "NTFS Permissions:" | Out-File $outputFileName -Append
-    try {(Get-Acl $sharePath).Access | ft | Out-File $outputFileName -Append}
-    catch {"No NTFS permissions were found." | Out-File $outputFileName -Append}
-}
+dataSharedFolders -name "Shares"
 
 # get local+domain account policy
-writeToScreen -str "Getting local and domain account policy..." -ForegroundColor Yellow
-$outputFileName = "$hostname\AccountPolicy_$hostname.txt"
-"============= Local Account Policy =============" | Out-File $outputFileName -Append
-"`nOutput of `"NET ACCOUNTS`" command:`n" | Out-File $outputFileName -Append
-NET ACCOUNTS | Out-File $outputFileName -Append
-# check if the computer is in a domain
-"`n============= Domain Account Policy =============" | Out-File $outputFileName -Append
-if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
-{
-    if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
-    {
-        "`nOutput of `"NET ACCOUNTS /domain`" command:`n" | Out-File $outputFileName -Append
-        NET ACCOUNTS /domain | Out-File $outputFileName -Append
-    }    
-    else
-        {"Error: No connection to the domain." | Out-File $outputFileName -Append}
-}
-else
-    {"Error: The computer is not part of a domain." | Out-File $outputFileName -Append}
+dataAccountPolicy -name "AccountPolicy"
 
 # get local users + admins
-# only run if no running on a domain controller
-$outputFileName = "$hostname\Local-Users_$hostname.txt"
-if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2)
-{
-    writeToScreen -str "Getting local users + administrators..." -ForegroundColor Yellow
-    "============= Local Administrators =============" | Out-File $outputFileName -Append
-    "`nOutput of `"NET LOCALGROUP administrators`" command:`n" | Out-File $outputFileName -Append
-    NET LOCALGROUP administrators | Out-File $outputFileName -Append
-    "`n============= Local Users =============" | Out-File $outputFileName -Append
-    # Get-LocalUser exists only in Windows 10 / 2016
-    try
-    {
-        "`nOutput of `"Get-LocalUser`" PowerShell command:`n" | Out-File $outputFileName -Append
-        Get-LocalUser | ft name, enabled, AccountExpires, PasswordExpires, PasswordRequired, PasswordLastSet, LastLogon, description, SID | Out-String -Width 180 | Out-File $outputFileName -Append
-    }
-    catch
-    {
-        "`nGetting information regarding local users from WMI.`n" | Out-File $outputFileName -Append
-        "Output of `"Get-CimInstance win32_useraccount -Namespace `"root\cimv2`" -Filter `"LocalAccount=`'$True`'`"`" PowerShell command:`n" | Out-File $outputFileName -Append
-        Get-CimInstance win32_useraccount -Namespace "root\cimv2" -Filter "LocalAccount='$True'" | Select Caption,Disabled,Lockout,PasswordExpires,PasswordRequired,Description,SID | format-table -autosize | Out-String -Width 180 | Out-File $outputFileName -Append
-    }
-}
+dataLocalUsers -name "Local-Users"
 	
 # check SMB protocol hardening
-writeToScreen -str "Getting SMB hardening configuration..." -ForegroundColor Yellow
-$outputFileName = "$hostname\SMB_$hostname.txt"
-"`n============= SMB versions Support (Server Settings) =============" | Out-File $outputFileName -Append
-# Check if Windows Vista/2008 or above
-if ($winVersion.Major -ge 6)
-{
-    $SMB1 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB1 -ErrorAction SilentlyContinue
-    $SMB2 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB2 -ErrorAction SilentlyContinue
-    $smbServerConfig = Get-SmbServerConfiguration
-    $smbClientConfig = Get-SmbClientConfiguration
-    if ($SMB1.SMB1 -eq 0)
-        {"SMB1 Server is not supported (based on registry values). Which is nice." | Out-File $outputFileName -Append}
-    else
-        {"SMB1 Server is supported (based on registry values). Which is pretty bad and a finding." | Out-File $outputFileName -Append}
-    if (!$smbConfig.EnableSMB1Protocol)
-        {"SMB1 Server is not supported (based on Get-SmbServerConfiguration). Which is nice." | Out-File $outputFileName -Append}
-    else
-        {"SMB1 Server is supported (based on Get-SmbServerConfiguration). Which is pretty bad and a finding." | Out-File $outputFileName -Append}
-    "---------------------------------------" | Out-File $outputFileName -Append
-    if ($SMB2.SMB2 -eq 0)
-        {"SMB2 and SMB3 Server are not supported (based on registry values). Which is weird, but not a finding." | Out-File $outputFileName -Append}
-    else
-        {"SMB2 and SMB3 Server are supported (based on registry values). Which is OK." | Out-File $outputFileName -Append}
-    if (!$smbServerConfig.EnableSMB2Protocol)
-        {"SMB2 Server is not supported (based on Get-SmbServerConfiguration). Which is weird, but not a finding." | Out-File $outputFileName -Append}
-    else
-        {"SMB2 Server is supported (based on Get-SmbServerConfiguration). Which is OK." | Out-File $outputFileName -Append}
-}
-else
-{
-    "Old Windows versions (XP or 2003) support only SMB1." | Out-File $outputFileName -Append
-}
-"`n============= SMB versions Support (Client Settings) =============" | Out-File $outputFileName -Append
-# Check if Windows Vista/2008 or above
-if ($winVersion.Major -ge 6)
-{
-    $SMB1Client = (sc.exe qc lanmanworkstation | ? {$_ -like "*START_TYPE*"}).split(":")[1][1]
-    Switch ($SMB1Client)
-    {
-        "0" {"SMB1 Client is set to 'Boot'. Which is weird. Disabled is better." | Out-File $outputFileName -Append}
-        "1" {"SMB1 Client is set to 'System'. Which is not weird. although disabled is better." | Out-File $outputFileName -Append}
-        "2" {"SMB1 Client is set to 'Automatic' (Enabled). Which is not very good, a possible finding, but not a must." | Out-File $outputFileName -Append}
-        "3" {"SMB1 Client is set to 'Manual' (Turned off, but can be started). Which is pretty good, although disabled is better." | Out-File $outputFileName -Append}
-        "4" {"SMB1 Client is set to 'Disabled'. Which is nice." | Out-File $outputFileName -Append}
-    }
-}
-else
-{
-    "Old Windows versions (XP or 2003) support only SMB1." | Out-File $outputFileName -Append
-}
-"`n============= SMB Signing (Server Settings) =============" | Out-File $outputFileName -Append
-$SmbServerRequireSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters RequireSecuritySignature
-$SmbServerSupportSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters EnableSecuritySignature
-if ($SmbServerRequireSigning.RequireSecuritySignature -eq 1)
-{
-    "Microsoft network server: Digitally sign communications (always) = Enabled" | Out-File $outputFileName -Append
-    "SMB signing is required by the server, Which is good." | Out-File $outputFileName -Append
-}
-else
-{
-    if ($SmbServerSupportSigning.EnableSecuritySignature -eq 1)
-    {
-        "Microsoft network server: Digitally sign communications (always) = Disabled" | Out-File $outputFileName -Append
-        "Microsoft network server: Digitally sign communications (if client agrees) = Enabled" | Out-File $outputFileName -Append
-        "SMB signing is enabled by the server, but not required. Clients of this server are susceptible to man-in-the-middle attacks, if they don't require signing. A possible finding." | Out-File $outputFileName -Append
-    }
-    else
-    {
-        "Microsoft network server: Digitally sign communications (always) = Disabled." | Out-File $outputFileName -Append
-        "Microsoft network server: Digitally sign communications (if client agrees) = Disabled." | Out-File $outputFileName -Append
-        "SMB signing is disabled by the server. Clients of this server are susceptible to man-in-the-middle attacks. A finding." | Out-File $outputFileName -Append
-    }
-}
-# potentially, we can also check SMB signing configuration using PowerShell:
-<#if ($smbServerConfig -ne $null)
-{
-    "---------------------------------------" | Out-File $outputFileName -Append
-    "Get-SmbServerConfiguration SMB server-side signing details:" | Out-File $outputFileName -Append
-    $smbServerConfig | fl *sign* | Out-File $outputFileName -Append
-}#>
-"`n============= SMB Signing (Client Settings) =============" | Out-File $outputFileName -Append
-$SmbClientRequireSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters RequireSecuritySignature
-$SmbClientSupportSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters EnableSecuritySignature
-if ($SmbClientRequireSigning.RequireSecuritySignature -eq 1)
-{
-    "Microsoft network client: Digitally sign communications (always) = Enabled" | Out-File $outputFileName -Append
-    "SMB signing is required by the client, Which is good." | Out-File $outputFileName -Append
-}
-else
-{
-    if ($SmbClientSupportSigning.EnableSecuritySignature -eq 1)
-    {
-        "Microsoft network client: Digitally sign communications (always) = Disabled" | Out-File $outputFileName -Append
-        "Microsoft network client: Digitally sign communications (if client agrees) = Enabled" | Out-File $outputFileName -Append
-        "SMB signing is enabled by the client, but not required. This computer is susceptible to man-in-the-middle attacks against servers that don't require signing. A possible finding." | Out-File $outputFileName -Append
-    }
-    else
-    {
-        "Microsoft network client: Digitally sign communications (always) = Disabled." | Out-File $outputFileName -Append
-        "Microsoft network client: Digitally sign communications (if client agrees) = Disabled." | Out-File $outputFileName -Append
-        "SMB signing is disabled by the client. This computer is susceptible to man-in-the-middle attacks. A finding." | Out-File $outputFileName -Append
-    }
-}
-if (($smbServerConfig -ne $null) -and ($smbClientConfig -ne $null)) {
-    # potentially, we can also check SMB signing configuration using PowerShell:
-    <#"---------------------------------------" | Out-File $outputFileName -Append
-    "Get-SmbClientConfiguration SMB client-side signing details:" | Out-File $outputFileName -Append
-    $smbClientConfig | fl *sign* | Out-File $outputFileName -Append #>
-    "`n============= Raw Data - Get-SmbServerConfiguration =============" | Out-File $outputFileName -Append
-    $smbServerConfig | Out-File $outputFileName -Append
-    "`n============= Raw Data - Get-SmbClientConfiguration =============" | Out-File $outputFileName -Append
-    $smbClientConfig | Out-File $outputFileName -Append
-}
+checkSMBHardening -name "SMB"
 
 # Getting RDP security settings
-writeToScreen -str "Getting RDP security settings..." -ForegroundColor Yellow
-$outputFileName = "$hostname\RDP_$hostname.txt"
-"============= Raw RDP Settings (from WMI) =============" | Out-File $outputFileName -Append
-$WMIFilter = "TerminalName='RDP-tcp'" # there might be issues with the quotation marks - to debug
-$RDP = Get-WmiObject -class Win32_TSGeneralSetting -Namespace root\cimv2\terminalservices -Filter $WMIFilter
-$RDP | fl Terminal*,*Encrypt*, Policy*,Security*,SSL*,*Auth* | Out-File $outputFileName -Append
-"`n============= NLA (Network Level Authentication) =============" | Out-File $outputFileName -Append
-if ($RDP.UserAuthenticationRequired -eq 1)
-    {"NLA is required, which is fine." | Out-File $outputFileName -Append}
-if ($RDP.UserAuthenticationRequired -eq 0)
-    {"NLA is not required, which is bad. A possible finding." | Out-File $outputFileName -Append}
-"`n============= Security Layer (SSL/TLS) =============" | Out-File $outputFileName -Append
-if ($RDP.SecurityLayer -eq 0)
-    {"Native RDP encryption is used instead of SSL/TLS, which is bad. A possible finding." | Out-File $outputFileName -Append}
-if ($RDP.SecurityLayer -eq 1)
-    {"SSL/TLS is supported, but not required ('Negotiate' setting). Which is not recommended, but not necessary a finding." | Out-File $outputFileName -Append}
-if ($RDP.SecurityLayer -eq 2)
-    {"SSL/TLS is required for connecting. Which is good." | Out-File $outputFileName -Append}
-"`n============= Raw RDP Timeout Settings (from Registry) =============" | Out-File $outputFileName -Append
-$RDPTimeout = Get-Item "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" 
-if ($RDPTimeout.ValueCount -eq 0)
-    {"RDP timeout is not configured. A possible finding." | Out-File $outputFileName -Append}
-else
-{
-    "The following RDP timeout properties were configured:" | Out-File $outputFileName -Append
-    $RDPTimeout | Out-File $outputFileName -Append
-    "`nMaxConnectionTime = Time limit for active RDP sessions" | Out-File $outputFileName -Append
-    "MaxIdleTime = Time limit for active but idle RDP sessions" | Out-File $outputFileName -Append
-    "MaxDisconnectionTime = Time limit for disconnected RDP sessions" | Out-File $outputFileName -Append
-    "fResetBroken = Log off session (instead of disconnect) when time limits are reached" | Out-File $outputFileName -Append
-    "60000 = 1 minute, 3600000 = 1 hour, etc." | Out-File $outputFileName -Append
-    "`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits" | Out-File $outputFileName -Append
-}
+dataRDPSecuirty -name "RDP"
 
 # getting credential guard settings (for Windows 10/2016 and above only)
-$outputFileName = "$hostname\Credential-Guard_$hostname.txt"
-if ($winVersion.Major -ge 10)
-{
-    writeToScreen -str "Getting credential guard settings..." -ForegroundColor Yellow
-    $DevGuard = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard
-    "============= Credential Guard Settings from WMI =============" | Out-File $outputFileName -Append
-    if ($DevGuard.SecurityServicesConfigured -eq $null)
-        {"The WMI query for Device Guard settings has failed. Status unknown." | Out-File $outputFileName -Append}
-    else {
-        if (($DevGuard.SecurityServicesConfigured -contains 1) -and ($DevGuard.SecurityServicesRunning -contains 1))
-        {"Credential Guard is configured and running. Which is good." | Out-File $outputFileName -Append}
-    else
-        {"Credential Guard is turned off. A possible finding." | Out-File $outputFileName -Append}    
-    }
-    "`n============= Raw Device Guard Settings from WMI (Including Credential Guard) =============" | Out-File $outputFileName -Append
-    $DevGuard | Out-File $outputFileName -Append
-    $DevGuardPS = Get-ComputerInfo dev*
-    "`n============= Credential Guard Settings from Get-ComputerInfo =============" | Out-File $outputFileName -Append
-    if ($DevGuardPS.DeviceGuardSecurityServicesRunning -eq $null)
-        {"Credential Guard is turned off. A possible finding." | Out-File $outputFileName -Append}
-    else
-    {
-        if (($DevGuardPS.DeviceGuardSecurityServicesRunning | ? {$_.tostring() -eq "CredentialGuard"}) -ne $null)
-            {"Credential Guard is configured and running. Which is good." | Out-File $outputFileName -Append}
-        else
-            {"Credential Guard is turned off. A possible finding." | Out-File $outputFileName -Append}
-    }
-    "`n============= Raw Device Guard Settings from Get-ComputerInfo =============" | Out-File $outputFileName -Append
-    $DevGuardPS | Out-File $outputFileName -Append
-}
+dataCredentialGuard -name "Credential-Guard"
 
 # getting LSA protection configuration (for Windows 8.1 and above only)
-$outputFileName = "$hostname\LSA-Protection_$hostname.txt"
-if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
-{
-    writeToScreen -str "Getting LSA protection settings..." -ForegroundColor Yellow
-    $RunAsPPL = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" RunAsPPL -ErrorAction SilentlyContinue
-    if ($RunAsPPL -eq $null)
-        {"RunAsPPL registry value does not exists. LSA protection is off . Which is bad and a possible finding." | Out-File $outputFileName -Append}
-    else
-    {
-        "RunAsPPL registry value is: " +$RunAsPPL.RunAsPPL | Out-File $outputFileName -Append
-        if ($RunAsPPL.RunAsPPL -eq 1)
-            {"LSA protection is on. Which is good." | Out-File $outputFileName -Append}
-        else
-            {"LSA protection is off. Which is bad and a possible finding." | Out-File $outputFileName -Append}
-    }
-}
+dataLSAProtectionConf -name "LSA-Protection"
 
 # search for sensitive information (i.e. cleartext passwords) if the flag exists
-$outputFileName = "$hostname\Sensitive-Info_$hostname.txt"
-if ($EnableSensitiveInfoSearch)
-{
-    writeToScreen -str "Searching for sensitive information..." -ForegroundColor Yellow
-    "============= Looking for clear-text passwords =============" | Out-File $outputFileName -Append
-    # recursive searches in c:\temp, current user desktop, default IIS website root folder
-    # add any other directory that you want. searching in C:\ may take a while.
-    $paths = "C:\Temp",[Environment]::GetFolderPath("Desktop"),"c:\Inetpub\wwwroot"
-    foreach ($path in $paths)
-    {
-        "`n============= recursive search in $path =============" | Out-File $outputFileName -Append
-        # find txt\ini\config\xml\vnc files with the word password in it, and dump the line
-        # ignore the files outputted during the assessment...
-        $includeFileTypes = @("*.txt","*.ini","*.config","*.xml","*vnc*")
-        Get-ChildItem -Path $path -Include $includeFileTypes -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | ? {$_.Name -notlike "*_$hostname.txt"} | Select-String -Pattern password | Out-File $outputFileName -Append
-        # find files with the name pass\cred\config\vnc\p12\pfx and dump the whole file, unless it is too big
-        # ignore the files outputted during the assessment...
-        $includeFilePatterns = @("*pass*","*cred*","*config","*vnc*","*p12","*pfx")
-        $files = Get-ChildItem -Path $path -Include $includeFilePatterns -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | ? {$_.Name -notlike "*_$hostname.txt"}
-        foreach ($file in $files)
-        {
-            "------------- $file -------------" | Out-File $outputFileName -Append
-            $fileSize = (Get-Item $file.FullName).Length
-            if ($fileSize -gt 300kb) {"The file is too large to copy (" + [math]::Round($filesize/(1mb),2) + " MB)." | Out-File $outputFileName -Append}
-            else {cat $file.FullName | Out-File $outputFileName -Append}
-        }
-    }
-}
+checkSensitiveInfo -name "Sensitive-Info"
 
 # get anti-virus status
-# works only on Windows Clients, Not on Servers (2008, 2012, etc.). Maybe the "Get-MpPreference" could work on servers - wasn't tested.
-$outputFileName = "$hostname\Antivirus_$hostname.txt"
-if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
-{
-    writeToScreen -str "Getting Anti-Virus status..." -ForegroundColor Yellow
-    if ($winVersion.Major -ge 6)
-    {
-        $AntiVirusProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiVirusProduct
-        $FirewallProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class FirewallProduct
-        $AntiSpywareProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiSpywareProduct
-        "`nSecurity products status was taken from WMI values on WMI namespace `"root\SecurityCenter2`".`n" | Out-File $outputFileName -Append
-    }
-    else
-    {
-        $AntiVirusProducts = Get-WmiObject -Namespace root\SecurityCenter -Class AntiVirusProduct
-        $FirewallProducts = Get-WmiObject -Namespace root\SecurityCenter -Class FirewallProduct
-        $AntiSpywareProducts = Get-WmiObject -Namespace root\SecurityCenter -Class AntiSpywareProduct
-        "`nSecurity products status was taken from WMI values on WMI namespace `"root\SecurityCenter`".`n" | Out-File $outputFileName -Append
-    }
-    if ($AntiVirusProducts -eq $null)
-        {"No Anti Virus products were found." | Out-File $outputFileName -Append}
-    "`n============= Anti-Virus Products Status =============" | Out-File $outputFileName -Append
-    foreach ($av in $AntiVirusProducts)
-    {    
-        "`nProduct Display name: " + $av.displayname | Out-File $outputFileName -Append
-        "Product Executable: " + $av.pathToSignedProductExe | Out-File $outputFileName -Append
-        "Time Stamp: " + $av.timestamp | Out-File $outputFileName -Append
-        "Product (raw) state: " + $av.productState | Out-File $outputFileName -Append
-        # check the product state
-        $hx = '0x{0:x}' -f $av.productState
-        if ($hx.Substring(3,2) -match "00|01")
-            {"AntiVirus is NOT enabled" | Out-File $outputFileName -Append}
-        else
-            {"AntiVirus is enabled" | Out-File $outputFileName -Append}
-        if ($hx.Substring(5) -eq "00")
-            {"Virus definitions are up to date" | Out-File $outputFileName -Append}
-        else
-            {"Virus definitions are NOT up to date" | Out-File $outputFileName -Append}
-    }
-    "`n============= Anti-Virus Products Status (Raw Data) =============" | Out-File $outputFileName -Append
-    $AntiVirusProducts | Out-File $outputFileName -Append
-    "`n============= Firewall Products Status (Raw Data) =============" | Out-File $outputFileName -Append
-    $FirewallProducts | Out-File $outputFileName -Append
-    "`n============= Anti-Spyware Products Status (Raw Data) =============" | Out-File $outputFileName -Append
-    $AntiSpywareProducts | Out-File $outputFileName -Append
-    # check Windows Defender settings
-    "`n============= Windows Defender Settings Status =============`n" | Out-File $outputFileName -Append
-    $WinDefenderSettings = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager"
-    switch ($WinDefenderSettings.AllowRealtimeMonitoring)
-    {
-        $null {"AllowRealtimeMonitoring registry value was not found." | Out-File $outputFileName -Append}
-        0 {"Windows Defender Real Time Monitoring is off." | Out-File $outputFileName -Append}
-        1 {"Windows Defender Real Time Monitoring is on." | Out-File $outputFileName -Append}
-    }
-    switch ($WinDefenderSettings.EnableNetworkProtection)
-    {
-        $null {"EnableNetworkProtection registry value was not found." | Out-File $outputFileName -Append}
-        0 {"Windows Defender Network Protection is off." | Out-File $outputFileName -Append}
-        1 {"Windows Defender Network Protection is on." | Out-File $outputFileName -Append}
-        2 {"Windows Defender Network Protection is set to audit mode." | Out-File $outputFileName -Append}
-    }
-    "`n---------------------------------" | Out-File $outputFileName -Append
-    "`nValues under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager:" | Out-File $outputFileName -Append
-     $WinDefenderSettings | Out-File $outputFileName -Append
-     "`n---------------------------------" | Out-File $outputFileName -Append
-     "`nRaw output of Get-MpPreference (Defender settings):" | Out-File $outputFileName -Append
-     $MpPreference = Get-MpPreference
-     $MpPreference | Out-File $outputFileName -Append
-     "`n---------------------------------" | Out-File $outputFileName -Append
-     $MpComputerStatus = Get-MpComputerStatus
-     "`nEnabled Defender features:" | Out-File $outputFileName -Append
-     $MpComputerStatus | fl *enabled* | Out-File $outputFileName -Append
-     "`nDefender Tamper Protection:" | Out-File $outputFileName -Append
-     $MpComputerStatus | fl *tamper* | Out-File $outputFileName -Append
-     "`nRaw output of Get-MpComputerStatus:" | Out-File $outputFileName -Append
-     $MpComputerStatus | Out-File $outputFileName -Append
-     "`n---------------------------------" | Out-File $outputFileName -Append
-     "`nAttack Surface Reduction Rules Ids:" | Out-File $outputFileName -Append
-     $MpPreference.AttackSurfaceReductionRules_Ids | Out-File $outputFileName -Append
-     "`nAttack Surface Reduction Rules Actions:" | Out-File $outputFileName -Append
-     $MpPreference.AttackSurfaceReductionRules_Actions | Out-File $outputFileName -Append
-     "`nAttack Surface Reduction Only Exclusions:" | Out-File $outputFileName -Append
-     $MpPreference.AttackSurfaceReductionOnlyExclusions | Out-File $outputFileName -Append
-}
+checkAntiVirusStatus -name "Antivirus"
 
 # get Windows Firewall configuration
-writeToScreen -str "Getting Windows Firewall configuration..." -ForegroundColor Yellow
-$outputFileName = "$hostname\Windows-Firewall_$hostname.txt"
-if ((Get-Service mpssvc).status -eq "Running")
-{
-    "The Windows Firewall service is running." | Out-File $outputFileName -Append
-    # The NetFirewall commands are supported from Windows 8/2012 (version 6.2)
-    if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
-    { 
-        "`n----------------------------------`n" | Out-File $outputFileName -Append
-        "The output of Get-NetFirewallProfile is:`n" | Out-File $outputFileName -Append
-        Get-NetFirewallProfile -PolicyStore ActiveStore | Out-File $outputFileName -Append    
-        "`n----------------------------------`n" | Out-File $outputFileName -Append
-        "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information there." | Out-File $outputFileName -Append
-        Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $hostname\Windows-Firewall-Rules_$hostname.csv -NoTypeInformation
-    }
-    if ($runningAsAdmin)
-    {
-        "`n----------------------------------`n" | Out-File $outputFileName -Append
-        netsh advfirewall export "$hostname\Windows_Firewall_Rules_$hostname.wfw" | Out-Null
-        "Firewall rules exported into Windows_Firewall_Rules_$hostname.wfw" | Out-File $outputFileName -Append
-        "To view it, open gpmc.msc in a test environment, create a temporary GPO, get to Computer=>Policies=>Windows Settings=>Security Settings=>Windows Firewall=>Right click on Firewall icon=>Import Policy" | Out-File $outputFileName -Append
-    }
-}
-else
-{
-    "The Windows Firewall service is not running." | Out-File $outputFileName -Append
-}
-
-# Nir's offer to improve Firewall Rule export functionality - to integrate
-<#
-Get-NetFirewallRule -PolicyStore ActiveStore | Where { $_.Enabled -eq $True } | select -Property PolicyStoreSourceType,
-Name,
-DisplayName,
-DisplayGroup,
-@{Name='Protocol';Expression={($PSItem | Get-NetFirewallPortFilter).Protocol}},
-@{Name='LocalPort';Expression={($PSItem | Get-NetFirewallPortFilter).LocalPort}},
-@{Name='RemotePort';Expression={($PSItem | Get-NetFirewallPortFilter).RemotePort}},
-@{Name='RemoteAddress';Expression={($PSItem | Get-NetFirewallAddressFilter).RemoteAddress}},
-@{Name='Service';Expression={($PSItem | Get-NetFirewallServiceFilter).Service}},
-@{Name='Program';Expression={($PSItem | Get-NetFirewallApplicationFilter).Program}},
-@{Name='Package';Expression={($PSItem | Get-NetFirewallApplicationFilter).Package}},
-Enabled,
-Profile,
-Direction,
-Action | export-csv -NoTypeInformation .\FW.csv
-#>
+dataWinFirewall -name "Windows-Firewall"
 
 # check if LLMNR and NETBIOS-NS are enabled
-# LLMNR and NETBIOS-NS are insecure legacy protocols for local multicast DNS queries that can be abused by Responder/Inveigh
-writeToScreen -str "Getting LLMNR and NETBIOS-NS configuration..." -ForegroundColor Yellow
-$outputFileName = "$hostname\LLMNR_and_NETBIOS_$hostname.txt"
-"============= LLMNR Configuration =============" | Out-File $outputFileName -Append
-"`nGPO Setting: Computer Configuration -> Administrative Templates -> Network -> DNS Client -> Enable Turn Off Multicast Name Resolution" | Out-File $outputFileName -Append
-$LLMNR = Get-ItemProperty "HKLM:\Software\policies\Microsoft\Windows NT\DNSClient" EnableMulticast -ErrorAction SilentlyContinue
-$LLMNR_Enabled = $LLMNR.EnableMulticast
-"`nRegistry Setting: `"HKLM:\Software\policies\Microsoft\Windows NT\DNSClient`" -> EnableMulticast = $LLMNR_Enabled" | Out-File $outputFileName -Append
-if ($LLMNR_Enabled -eq 0)
-    {"`nLLMNR is disabled, which is secure." | Out-File $outputFileName -Append}
-else
-    {"`nLLMNR is enabled, which is a finding, especially for workstations." | Out-File $outputFileName -Append}
-"`n============= NETBIOS Name Service Configuration =============" | Out-File $outputFileName -Append
-"`nChecking the NETBIOS Node Type configuration - see 'https://getadmx.com/?Category=KB160177#' for details...`n" | Out-File $outputFileName -Append
-$NodeType = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Services\NetBT\Parameters" NodeType -ErrorAction SilentlyContinue).NodeType
-if ($NodeType -eq 2)
-    {"NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server), which is secure." | Out-File $outputFileName -Append}
-else
-{
-    switch ($NodeType)
-    {
-        $null {"NetBIOS Node Type is set to the default setting (broadcast queries), which is not secure and a finding." | Out-File $outputFileName -Append}
-        1 {"NetBIOS Node Type is set to B-node (broadcast queries), which is not secure and a finding." | Out-File $outputFileName -Append}
-        4 {"NetBIOS Node Type is set to M-node (broadcasts first, then queries the WINS name server), which is not secure and a finding." | Out-File $outputFileName -Append}
-        8 {"NetBIOS Node Type is set to H-node (queries the WINS name server first, then broadcasts), which is not secure and a finding." | Out-File $outputFileName -Append}        
-    }
-
-    "`nChecking the NETBIOS over TCP/IP configuration for each network interface." | Out-File $outputFileName -Append
-    "`nNetwork interface properties -> IPv4 properties -> Advanced -> WINS -> NetBIOS setting" | Out-File $outputFileName -Append
-    "`nNetbiosOptions=0 is default, and usually means enabled, which is not secure and a possible finding." | Out-File $outputFileName -Append
-    "NetbiosOptions=1 is enabled, which is not secure and a possible finding." | Out-File $outputFileName -Append
-    "NetbiosOptions=2 is disabled, which is secure." | Out-File $outputFileName -Append
-    "If NetbiosOptions is set to 2 for the main interface, NetBIOS Name Service is protected against poisoning attacks even though the NodeType is not set to P-node, and this is not a finding." | Out-File $outputFileName -Append
-    $interfaces = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_*" NetbiosOptions -ErrorAction SilentlyContinue
-    $interfaces | select PSChildName,NetbiosOptions | Out-File $outputFileName -Append
-}
+checkLLMNRAndNetBIOS -name "LLMNR_and_NETBIOS"
 
 # check if cleartext credentials are saved in lsass memory for WDigest
 # turned on by default for Win7/2008/8/2012, to fix it you must install kb2871997 and than fix the registry value below
