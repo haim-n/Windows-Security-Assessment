@@ -1,25 +1,21 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.16" # used for logging purposes
+$Version = "1.17" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
-- Determine if GPO setttings are reprocessed (reapplied) even when no changes were made to GPO - integrate Nital's script (currently commented out)
 - Improve the Firewall Rules export functionality - integrate Nir's offer (currently commented out)
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
 - Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check for bugs in the SMB1 check
 - Log errors to a log file using Start/Stop-Transcript
-- Check for "Always install with elevated privileges"
 - Debug the FirewallProducts check
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP (reg key)
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Debug the RDP check on multiple OS versions
 - Integrate more checks from https://adsecurity.org/?p=3299
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
--- Check NTLM registry key
--- Determine if PowerShell logging is enabled (based on registry)
 -- Check Kerberos encryption algorithms
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
 -- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
@@ -54,7 +50,7 @@ Controls Checklist:
 - Credential guard is running (Credential-Guard file, Win 10/2016 and above)
 - SMB Signing is enforced (SMB file)
 - SMB1 Server is not installed (SMB file)
-- NTLMv2 is enforced  (Security-Policy inf file: Network security: LAN Manager authentication level, admin needed)
+- NTLMv2 is enforced  (Domain-Hardning file)
 - LLMNR is disabled (LLMNR_and_NETBIOS file)
 - NETBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
 - WDigest is disabled (WDigest file)
@@ -63,7 +59,7 @@ Controls Checklist:
 - RDP timeout for disconnected sessions is configured (RDP file)
 - RDP NLA is required (RDP file)
 - PowerShell v2 is uninstalled (PowerShellv2 file, and/or Windows-Features file: PowerShell-V2 feature)
-- PowerShell logging is enabled (gpresult file)
+- PowerShell logging is enabled (Audit-Policy file)
 - Audit policy is sufficient (Audit-Policy file, admin needed)
 - Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
@@ -88,6 +84,8 @@ Controls Checklist:
 - Macros are restricted
 - Defender ASR rules are configured (AntiVirus file)
 - Host firewall rules are configured to block inbound (Windows-Firewall and Windows-Firewall-Rules files)
+- GPO Enforce reprocess check (Domain-Hardning file)
+- Always install with elevated privileges setting (Domain-Hardning file)
 ##########################################################
 @Haim Nachmias
 ##########################################################>
@@ -963,42 +961,189 @@ else
     "PowerShell version 1/2 is not installed." | Out-File $outputFileName -Append
 }
 
-# check whether GPO changes are reprocessed if no changes identified
-## this was sent by Nital - need to integrate it
-<#
-try{
-    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction Stop
-    if ($temp.NoGPOListChanges -ne 0){
-        Write-Host 'GPO registry policy reprocess is not configured currectly "processed even if not changed"'
-​
+
+# NTLMv2 enforcement check - check if there is a GPO that enforce the use of NTLMv2 (checking registry)
+write-host Getting NTLM version enforcment... -ForegroundColor Yellow
+$outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
+"`n============= NTLM Check =============" | Out-File $outputFileName -Append
+"NTLMv1 & LM are  legacy authentication protocols that are reversible" | Out-File $outputFileName -Append
+"If there are legacy systems in the network configure Level 3 NTLM hardning on the domain (that way only the lagacy system will use the legacy authentication) otherwise select Level 5" | Out-File $outputFileName -Append
+"For more information go to: https://docs.microsoft.com/en-us/troubleshoot/windows-client/windows-security/enable-ntlm-2-authentication `n" | Out-File $outputFileName -Append
+$temp = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LmCompatibilityLevel -ErrorAction SilentlyContinue # registry key that contains the NTLM restrications
+if($null -eq $temp){
+    " > NTLM Authntication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default`n" | Out-File $outputFileName -Append #using system default depends on OS version
+}
+switch ($temp.lmcompatibilitylevel) {
+    (0) { " > NTLM Authntication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" | Out-File $outputFileName -Append }
+    (1) { " > NTLM Authntication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" | Out-File $outputFileName -Append }
+    (2) { " > NTLM Authntication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" | Out-File $outputFileName -Append }
+    (3) { " > NTLM Authntication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration`n" | Out-File $outputFileName -Append }
+    (4) { " > NTLM Authntication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration`n" | Out-File $outputFileName -Append }
+    (5) { " > NTLM Authntication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - A good thing!)`n" | Out-File $outputFileName -Append }
+    Default {" > NTLM Authntication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`n" | Out-File $outputFileName -Append}
+}
+
+
+# GPO reprocess check
+write-host Getting GPO enforcment... -ForegroundColor Yellow
+$outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
+"`n============= GPO Reprocess Check =============" | Out-File $outputFileName -Append
+"If GPO reprocess is not enforced once the GPO received is the first and lest time the gpo is enforced (until next change)" | Out-File $outputFileName -Append
+"GPO can be overridden with administrator premission - it is recommended that all security settings will be repossessed every time the system checks for GPO change`n" | Out-File $outputFileName -Append
+$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains registry polciy reprocess settings 
+if($null -eq $temp){
+    ' > GPO regirstry policy reprocess is not configured "processed even if not changed"' | Out-File $outputFileName -Append
+}
+elseif ($temp.NoGPOListChanges -ne 0) {
+    ' > GPO regirstry policy reprocess is not configured currectly "processed even if not changed"' | Out-File $outputFileName -Append
+}
+$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains script policy reprocess settings 
+if($null -eq $temp){
+    ' > GPO script policy reprocess is not configured "processed even if not changed"' | Out-File $outputFileName -Append
+}
+elseif ($temp.NoGPOListChanges -ne 0) {
+    ' > GPO script policy reprocess is not configured currectly "processed even if not changed"' | Out-File $outputFileName -Append
+}
+$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{827D319E-6EAC-11D2-A4EA-00C04F79F83A}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains security policy reprocess settings 
+if($null -eq $temp){
+    ' > GPO security policy reprocess is not configured "processed even if not changed"' | Out-File $outputFileName -Append
+}
+elseif ($temp.NoGPOListChanges -ne 0) {
+    ' > GPO security policy reprocess is not configured currectly "processed even if not changed"' | Out-File $outputFileName -Append
+}
+
+# Powershell Audit settings check
+write-host Getting Powershell audit policy... -ForegroundColor Yellow
+$outputFileName = "$hostname\Audit-Policy_$hostname.txt"
+"`n============= PowerShell Audit =============" | Out-File $outputFileName -Append
+" Powershell Audit is configured by three main settings modules, script block and transcript:" | Out-File $outputFileName -Append
+"  - Model logging - audits the modules used in powershell commands\scripts" | Out-File $outputFileName -Append
+"  - Script block - audits the use of script block in powershell commands\scripts" | Out-File $outputFileName -Append
+"  - Transcript - audits the commands running in powershell" | Out-File $outputFileName -Append
+" For comprehensive audit trail all of those need to be configured and each of them has a special setting that need to be configured to work properly (for example in module audit you need to specify witch modules to audit)`n" | Out-File $outputFileName -Append
+# --- Start Of Module Logging ---
+"--- PowerShell Module audit: "| Out-File $outputFileName -Append
+$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in Computer-Space
+if($null -eq $temp){
+    $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in User-Space 
+    if($null -ne $temp -and $temp.EnableModuleLogging -eq 1){
+        $temp2 = Get-ItemPropertyValue -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames\" -name * -ErrorAction SilentlyContinue # registry that contains which Module are logged in User-Space  
+        if($temp2 -cnotcontains "*"){
+            " > PowerShell - Module logging is enforced on all modules but only on the user" | Out-File $outputFileName -Append
+        }
+        else{
+            " > PowerShell - Module logging is enforced only on the user and not on all modules" | Out-File $outputFileName -Append
+            Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -ErrorAction SilentlyContinue | Out-File $outputFileName -Append # getting which Module are logged in User-Space  
+        } 
+    }
+    else {
+        " > PowerShell - Module logging is not enforced"  | Out-File $outputFileName -Append
     }
 }
-catch{
-    Write-Host 'GPO registry policy reprocess is not configured "processed even if not changed"'
-}
-​
-try{
-    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -Name NoGPOListChanges -ErrorAction Stop
-    if ($temp.NoGPOListChanges -ne 0){
-        Write-Host 'GPO script policy reprocess is not configured currectly "processed even if not changed"'
-​
+elseif($temp.EnableModuleLogging -eq 1){
+    $temp2 = Get-ItemPropertyValue -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -Name * -ErrorAction SilentlyContinue # registry that contains which Module are logged in Computer-Space
+    if($temp2 -cnotcontains "*"){
+        " > PowerShell - Module logging is not enforced on all modules:"  | Out-File $outputFileName -Append
+        Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames"  -ErrorAction SilentlyContinue | Out-File $outputFileName -Append # getting which Module are logged in User-Space  
+    }
+    else{
+        " > PowerShell - Module logging is enforced on all modules" | Out-File $outputFileName -Append
     }
 }
-catch{
-    Write-Host 'GPO script policy reprocess is not configured "processed even if not changed"'
+else{
+    " > PowerShell - Module logging is Not enforced!" | Out-File $outputFileName -Append
 }
-​
-try{
-    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{827D319E-6EAC-11D2-A4EA-00C04F79F83A}" -Name NoGPOListChanges -ErrorAction Stop
-    if ($temp.NoGPOListChanges -ne 0){
-        Write-Host 'GPO security policy reprocess is not configured currectly "processed even if not changed"'
-​
+
+# --- End Of Module Logging ---
+# --- Start of ScriptBlock logging
+"--- PowerShell Script block logging: "| Out-File $outputFileName -Append
+$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockLogging -ErrorAction SilentlyContinue # registry containing script-block logging setting - in computer-space
+if($null -eq $temp -or $temp.EnableScriptBlockLogging -ne 1){
+    $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockLogging -ErrorAction SilentlyContinue # registry containing script-block logging setting - in user-space
+    if($null -ne $temp -and $temp.EnableScriptBlockLogging -eq 1){
+        $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockInvocationLogging -ErrorAction SilentlyContinue # registry containing script-block Invocation logging setting - in user-space
+        if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
+            " > PowerShell - Script Block logging is enabled but Invocation logging is not enforced - only on user" | Out-File $outputFileName -Append
+        }
+        else{
+            " > PowerShell - Script Block logging is enforced - only on user" | Out-File $outputFileName -Append
+        }
+    }
+    else{
+        " > PowerShell - Script Block logging is not enforced"| Out-File $outputFileName -Append
     }
 }
-catch{
-    Write-Host 'GPO security policy reprocess is not configured "processed even if not changed"'
+else{
+    $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockInvocationLogging -ErrorAction SilentlyContinue # registry containing script-block Invocation logging setting - in computer-space
+    if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
+        " > PowerShell - Script Block logging is enabled but Invocation logging is not enforced" | Out-File $outputFileName -Append
+    }
+    else{
+        " > PowerShell - Script Block logging is enabled" | Out-File $outputFileName -Append
+    }
 }
-#>
+# --- End of ScriptBlock logging
+# --- Start Transcription logging 
+"--- PowerShell Transcripting logging: "| Out-File $outputFileName -Append
+$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableTranscripting -ErrorAction SilentlyContinue # registry containing transcripting logging setting - computer-space
+$bollCheck = $false
+if($null -eq $temp -or $temp.EnableTranscripting -ne 1){
+    $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableTranscripting -ErrorAction SilentlyContinue # registry containing transcripting logging setting - user-space
+    if($null -ne $temp -and $temp.EnableTranscripting -eq 1){
+        $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableInvocationHeader -ErrorAction SilentlyContinue # registry containing transcripting Invocation-Header logging setting - user-space
+        if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
+            " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced" | Out-File $outputFileName -Append
+            $bollCheck = $True
+        }
+        $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name OutputDirectory -ErrorAction SilentlyContinue # registry containing transcripting output directory logging setting - user-space
+        if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
+            " > PowerShell - Transcription logging is enforced but no folder is set to save the log" | Out-File $outputFileName -Append
+            $bollCheck = $True
+        }
+        if(!$bollCheck){
+            " > Powershell - Transcription logging is enforced currectly but only on the user" | Out-File $outputFileName -Append
+            $bollCheck = $True
+        }
+    }
+    else{
+        " > PowerShell - Transcription logging is not enforced (logging input and outpot of powershell command)" | Out-File $outputFileName -Append
+        $bollCheck = $True
+    }
+}
+else{
+    $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableInvocationHeader -ErrorAction SilentlyContinue # registry containing transcripting Invocation-Header logging setting - computer-space
+    if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
+        " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced" | Out-File $outputFileName -Append
+        $bollCheck = $True
+    }
+    $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name OutputDirectory -ErrorAction SilentlyContinue # registry containing transcripting output directory logging setting - computer-space
+    if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
+        " > PowerShell - Transcription logging is enabled but no folder is set to save the log" | Out-File $outputFileName -Append
+        $bollCheck = $True
+    }
+}
+if(!$bollCheck){
+    " > PowerShell - Transcription logging is enabled and configured currectly" | Out-File $outputFileName -Append
+}
+
+
+# Check always install elevated setting
+write-host Getting Always install with elevation setting... -ForegroundColor Yellow
+$outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
+"`n============= Always install elevated Check =============" | Out-File $outputFileName -Append
+"checking if GPO is configured to force installation as administrator - can be used by an attacker`n" | Out-File $outputFileName -Append
+$temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
+if($null -eq $temp){
+    ' > No GPO for for "Always install with elevation"' | Out-File $outputFileName -Append
+}
+elseif ($temp.AlwaysInstallElevated -eq 1) {
+    ' > Always install with elevated is enabled - this is a finding!' | Out-File $outputFileName -Append
+}
+else{
+    ' > GPO for "Always install with elevated" is existing but not forceing installing with elevation' | Out-File $outputFileName -Append
+}
+
+
 
 # get various system info (can take a few seconds)
 write-host Running systeminfo... -ForegroundColor Yellow
