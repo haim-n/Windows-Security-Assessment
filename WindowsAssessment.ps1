@@ -90,13 +90,49 @@ Controls Checklist:
 @Haim Nachmias
 ##########################################################>
 
+
+### functions
+#function to write to screen
+function writeToScreen {
+    param (
+        $str,$ForegroundColor
+    )
+    Write-Host $str -ForegroundColor $ForegroundColor
+}
+
+#funtion that writes to file gets 3 params (path = folder , file = file name , str string to write in the file)
+function writeToFile {
+    param (
+        $path, $file, $str
+    )
+    if (!(Test-Path "$path\$file"))
+    {
+        New-Item -path $path -name $file -type "file" -value $str"`n" | Out-Null
+    }
+    else
+    {
+        Add-Content -path "$path\$file" -value $str
+    } 
+}
+#function that writes the log file
+function writeToLog {
+    param (
+        [string]$str
+    )
+    $stemp = (Get-Date).ToString("yyyy/MM/dd HH:mm:ss")
+    $logMassage = "$stemp $str"
+    writeToFile -path $hostname -file "Log_$hostname.txt" -str $logMassage
+}
+
+
+### start of script
 $startTime = Get-Date
-write-host Hello dear user! -ForegroundColor Green
-Write-Host This script will output the results to a folder or a zip file with the computer name. -ForegroundColor Green
+writeToScreen -str "Hello dear user!" -ForegroundColor "Green"
+writeToScreen -str "This script will output the results to a folder or a zip file with the computer name." -ForegroundColor "Green"
 #check if running as an elevated admin
 $runningAsAdmin = (whoami /groups | select-string S-1-16-12288) -ne $null
 if (!$runningAsAdmin)
-    {Write-host "Please run the script as an elevated admin, or else some output will be missing! :-(" -ForegroundColor Red}
+    {writeToScreen -str "Please run the script as an elevated admin, or else some output will be missing! :-(" -ForegroundColor Red}
 
 # get hostname to use as the folder name and file names
 $hostname = hostname
@@ -108,31 +144,30 @@ Remove-Item $hostname -Recurse -ErrorAction SilentlyContinue
 New-Item $hostname -type directory -ErrorAction SilentlyContinue | Out-Null
 
 # output log
-$outputFileName = "$hostname\Log_$hostname.txt"
-"Computer Name: $hostname" | Out-File $outputFileName -Append
-"Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption | Out-File $outputFileName -Append
+writeToLog -str "Computer Name: $hostname"
+writeToLog -str ("Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption)
 $partOfDomain = (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
-"Part of Domain: $partOfDomain" | Out-File $outputFileName -Append
+writeToLog -str  "Part of Domain: $partOfDomain" 
 if ($partOfDomain)
 {
-    "Domain Name: " + (Get-WmiObject -class Win32_ComputerSystem).Domain | Out-File $outputFileName -Append
+    writeToLog -str  ("Domain Name: " + (Get-WmiObject -class Win32_ComputerSystem).Domain)
     if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
-        {"Domain Controller: True" | Out-File $outputFileName -Append}
+        {writeToLog -str  "Domain Controller: True" }
     else
-        {"Domain Controller: False" | Out-File $outputFileName -Append}    
+        {writeToLog -str  "Domain Controller: False"}    
 }
 $user = whoami
-"`nRunning User: $user" | Out-File $outputFileName -Append
-"Running As Admin: $runningAsAdmin" | Out-File $outputFileName -Append
+writeToLog -str "Running User: $user"
+writeToLog -str "Running As Admin: $runningAsAdmin"
 $uptimeDate = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject Win32_OperatingSystem).LastBootUpTime)
-"System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $outputFileName -Append
-"Script Version: $Version" | Out-File $outputFileName -Append
-"Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") | Out-File $outputFileName -Append
+writeToLog -str ("System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:mm:ss")) 
+writeToLog -str "Script Version: $Version"
+writeToLog -str ("Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") )
 
 #########################################################
 
 # get current user privileges
-write-host Running whoami... -ForegroundColor Yellow
+writeToScreen -str "Running whoami..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Whoami_$hostname.txt"
 "`nOutput of `"whoami /all`" command:`n" | Out-File $outputFileName -Append
 # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
@@ -149,13 +184,13 @@ else
 "`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens" | Out-File $outputFileName -Append
 
 # get IP settings
-write-host Running ipconfig... -ForegroundColor Yellow
+writeToScreen -str "Running ipconfig..." -ForegroundColor Yellow
 $outputFileName = "$hostname\ipconfig_$hostname.txt"
 "`nOutput of `"ipconfig /all`" command:`n" | Out-File $outputFileName -Append
 ipconfig /all | Out-File $outputFileName -Append
 
 # test for internet connectivity
-write-host Trying to ping the internet... -ForegroundColor Yellow
+writeToScreen -str "Trying to ping the internet..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Internet-Connectivity_$hostname.txt"
 "============= ping -n 2 8.8.8.8 =============" | Out-File $outputFileName -Append
 ping -n 2 8.8.8.8 | Out-File $outputFileName -Append
@@ -170,7 +205,7 @@ ping -n 2 8.8.8.8 | Out-File $outputFileName -Append
 
 # get network connections (run-as admin is required for -b associated application switch)
 $outputFileName = "$hostname\Netstat_$hostname.txt"
-write-host Running netstat... -ForegroundColor Yellow
+writeToScreen -str "Running netstat..." -ForegroundColor Yellow
 "`n============= netstat -nao =============" | Out-File $outputFileName -Append
 netstat -nao | Out-File $outputFileName -Append
 "`n============= netstat -naob (includes process name, elevated admin permission is required =============" | Out-File $outputFileName -Append
@@ -186,14 +221,14 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
     # check if we have connectivity to the domain, or if is a DC
     if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
     {
-        write-host Running GPResult to get GPOs... -ForegroundColor Yellow
+        writeToScreen -str "Running GPResult to get GPOs..." -ForegroundColor Yellow
         gpresult /f /h $outputFileName
         # /h doesn't exists on Windows 2003, so we run without /h into txt file
         if (!(Test-Path $outputFileName)) {gpresult $hostname\gpresult_$hostname.txt}
     }
     else
     {
-        write-host Unable to get GPO configuration... the computer is not connected to the domain -ForegroundColor Red
+        writeToScreen -str "Unable to get GPO configuration... the computer is not connected to the domain" -ForegroundColor Red
     }
 }
 
@@ -202,12 +237,12 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
 $outputFileName = "$hostname\Security-Policy_$hostname.inf"
 if ($runningAsAdmin)
 {
-    write-host Getting security policy settings... -ForegroundColor Yellow
+    writeToScreen -str "Getting security policy settings..." -ForegroundColor Yellow
     secedit /export /CFG $outputFileName | Out-Null
 }
 else
 {
-    write-host Unable to get security policy settings... elevated admin permissions are required -ForegroundColor Red
+    writeToScreen -str "Unable to get security policy settings... elevated admin permissions are required" -ForegroundColor Red
 }
 
 # get audit policy (Windows vista/2008 & run-as admin are required)
@@ -216,13 +251,13 @@ if ($winVersion.Major -ge 6)
 {
     if ($runningAsAdmin)
     {
-        write-host Getting audit policy settings... -ForegroundColor Yellow
+        writeToScreen -str "Getting audit policy settings..." -ForegroundColor Yellow
         "`nOutput of `"auditpol /get /category:*`" command:`n" | Out-File $outputFileName -Append
         auditpol /get /category:* | Out-File $outputFileName -Append
     }
     else
     {
-        write-host Unable to get audit policy... elevated admin permissions are required -ForegroundColor Red
+        writeToScreen -str "Unable to get audit policy... elevated admin permissions are required" -ForegroundColor Red
         "Unable to get audit policy without running as admin. Consider running again with elevated admin permissions." | Out-File $outputFileName -Append
     }
 }
@@ -234,11 +269,11 @@ if ($winVersion.Major -ge 6)
     # first check if we can fetch Windows features in any way - Windows workstation without RunAsAdmin cannot fetch features (also Win2008 but it's rare...)
     if ((!$runningAsAdmin) -and ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1))
     {
-        write-host Unable to get Windows features... elevated admin permissions are required -ForegroundColor Red
+        writeToScreen -str "Unable to get Windows features... elevated admin permissions are required" -ForegroundColor Red
     }
     else
     {
-        write-host Getting Windows features... -ForegroundColor Yellow
+        writeToScreen -str "Getting Windows features..." -ForegroundColor Yellow
     }
 
     "There are several ways of getting the Windows features. Some require elevation. See the following for details: https://hahndorf.eu/blog/WindowsFeatureViaCmd" | Out-File $outputFileName -Append
@@ -272,7 +307,7 @@ if ($winVersion.Major -ge 6)
 
 # get installed hotfixes (/format:htable doesn't always work)
 $outputFileName = "$hostname\Hotfixes_$hostname.txt"
-write-host Getting installed hotfixes... -ForegroundColor Yellow
+writeToScreen -str "Getting installed hotfixes..." -ForegroundColor Yellow
 "`nThe OS version is: " + [System.Environment]::OSVersion + ". See if this version is supported according to the following pages:" | Out-File $outputFileName -Append
 "https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" | Out-File $outputFileName -Append
 "https://en.wikipedia.org/wiki/Windows_10_version_history" | Out-File $outputFileName -Append
@@ -282,13 +317,13 @@ Get-HotFix | sort InstalledOn -Descending -ErrorAction SilentlyContinue | Out-Fi
 <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
 if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
 {
-    write-host "Checking for installed hotfixes again... htable format didn't work" -ForegroundColor Yellow
+    writeToScreen -str "Checking for installed hotfixes again... htable format didn't work" -ForegroundColor Yellow
     Remove-Item $hostname\hotfixes_$hostname.html
     wmic qfe list > $hostname\hotfixes_$hostname.txt
 } #>
 
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
-write-host Getting processes... -ForegroundColor Yellow
+writeToScreen -str "Getting processes..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Process-list_$hostname.txt"
 "`nOutput of `"Get-Process`" PowerShell command:`n" | Out-File $outputFileName -Append
 try {Get-Process -IncludeUserName | ft -AutoSize ProcessName, id, company, ProductVersion, username, cpu, WorkingSet | Out-String -Width 180 | Out-File $outputFileName -Append}
@@ -296,18 +331,18 @@ try {Get-Process -IncludeUserName | ft -AutoSize ProcessName, id, company, Produ
 catch {Get-Process | ft -AutoSize ProcessName, id, company, ProductVersion, cpu, WorkingSet | Out-String -Width 180 | Out-File $outputFileName -Append}
 
 # get services
-write-host Getting services... -ForegroundColor Yellow
+writeToScreen -str "Getting services..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Services_$hostname.txt"
 "`nOutput of `"Get-WmiObject win32_service`" PowerShell command:`n" | Out-File $outputFileName -Append
 Get-WmiObject win32_service  | Sort displayname | ft -AutoSize DisplayName, Name, State, StartMode, StartName | Out-String -Width 180 | Out-File $outputFileName -Append
 
 # get installed software
-write-host Getting installed software... -ForegroundColor Yellow
+writeToScreen -str "Getting installed software..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Software_$hostname.txt"
 Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | sort DisplayName | Out-String -Width 180 | Out-File $outputFileName
 
 # get shared folders (Share permissions are missing for older PowerShell versions)
-write-host Getting shared folders... -ForegroundColor Yellow
+writeToScreen -str "Getting shared folders..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Shares_$hostname.txt"
 "============= Shared Folders =============" | Out-File $outputFileName -Append
 $shares = Get-WmiObject -Class Win32_Share
@@ -351,7 +386,7 @@ foreach ($share in $shares)
 }
 
 # get local+domain account policy
-write-host Getting local and domain account policy... -ForegroundColor Yellow
+writeToScreen -str "Getting local and domain account policy..." -ForegroundColor Yellow
 $outputFileName = "$hostname\AccountPolicy_$hostname.txt"
 "============= Local Account Policy =============" | Out-File $outputFileName -Append
 "`nOutput of `"NET ACCOUNTS`" command:`n" | Out-File $outputFileName -Append
@@ -376,7 +411,7 @@ else
 $outputFileName = "$hostname\Local-Users_$hostname.txt"
 if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2)
 {
-    write-host Getting local users + administrators... -ForegroundColor Yellow
+    writeToScreen -str "Getting local users + administrators..." -ForegroundColor Yellow
     "============= Local Administrators =============" | Out-File $outputFileName -Append
     "`nOutput of `"NET LOCALGROUP administrators`" command:`n" | Out-File $outputFileName -Append
     NET LOCALGROUP administrators | Out-File $outputFileName -Append
@@ -396,7 +431,7 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2)
 }
 	
 # check SMB protocol hardening
-Write-Host Getting SMB hardening configuration... -ForegroundColor Yellow
+writeToScreen -str "Getting SMB hardening configuration..." -ForegroundColor Yellow
 $outputFileName = "$hostname\SMB_$hostname.txt"
 "`n============= SMB versions Support (Server Settings) =============" | Out-File $outputFileName -Append
 # Check if Windows Vista/2008 or above
@@ -511,7 +546,7 @@ if (($smbServerConfig -ne $null) -and ($smbClientConfig -ne $null)) {
 }
 
 # Getting RDP security settings
-Write-Host Getting RDP security settings... -ForegroundColor Yellow
+writeToScreen -str "Getting RDP security settings..." -ForegroundColor Yellow
 $outputFileName = "$hostname\RDP_$hostname.txt"
 "============= Raw RDP Settings (from WMI) =============" | Out-File $outputFileName -Append
 $WMIFilter = "TerminalName='RDP-tcp'" # there might be issues with the quotation marks - to debug
@@ -549,7 +584,7 @@ else
 $outputFileName = "$hostname\Credential-Guard_$hostname.txt"
 if ($winVersion.Major -ge 10)
 {
-    Write-Host Getting credential guard settings... -ForegroundColor Yellow
+    writeToScreen -str "Getting credential guard settings..." -ForegroundColor Yellow
     $DevGuard = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard
     "============= Credential Guard Settings from WMI =============" | Out-File $outputFileName -Append
     if ($DevGuard.SecurityServicesConfigured -eq $null)
@@ -581,7 +616,7 @@ if ($winVersion.Major -ge 10)
 $outputFileName = "$hostname\LSA-Protection_$hostname.txt"
 if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
 {
-    Write-Host Getting LSA protection settings... -ForegroundColor Yellow
+    writeToScreen -str "Getting LSA protection settings..." -ForegroundColor Yellow
     $RunAsPPL = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" RunAsPPL -ErrorAction SilentlyContinue
     if ($RunAsPPL -eq $null)
         {"RunAsPPL registry value does not exists. LSA protection is off . Which is bad and a possible finding." | Out-File $outputFileName -Append}
@@ -599,7 +634,7 @@ if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.
 $outputFileName = "$hostname\Sensitive-Info_$hostname.txt"
 if ($EnableSensitiveInfoSearch)
 {
-    write-host Searching for sensitive information... -ForegroundColor Yellow
+    writeToScreen -str "Searching for sensitive information..." -ForegroundColor Yellow
     "============= Looking for clear-text passwords =============" | Out-File $outputFileName -Append
     # recursive searches in c:\temp, current user desktop, default IIS website root folder
     # add any other directory that you want. searching in C:\ may take a while.
@@ -630,7 +665,7 @@ if ($EnableSensitiveInfoSearch)
 $outputFileName = "$hostname\Antivirus_$hostname.txt"
 if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
 {
-    write-host Getting Anti-Virus status... -ForegroundColor Yellow
+    writeToScreen -str "Getting Anti-Virus status..." -ForegroundColor Yellow
     if ($winVersion.Major -ge 6)
     {
         $AntiVirusProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiVirusProduct
@@ -712,7 +747,7 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
 }
 
 # get Windows Firewall configuration
-Write-Host Getting Windows Firewall configuration... -ForegroundColor Yellow
+writeToScreen -str "Getting Windows Firewall configuration..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Windows-Firewall_$hostname.txt"
 if ((Get-Service mpssvc).status -eq "Running")
 {
@@ -761,7 +796,7 @@ Action | export-csv -NoTypeInformation .\FW.csv
 
 # check if LLMNR and NETBIOS-NS are enabled
 # LLMNR and NETBIOS-NS are insecure legacy protocols for local multicast DNS queries that can be abused by Responder/Inveigh
-Write-Host Getting LLMNR and NETBIOS-NS configuration... -ForegroundColor Yellow
+writeToScreen -str "Getting LLMNR and NETBIOS-NS configuration..." -ForegroundColor Yellow
 $outputFileName = "$hostname\LLMNR_and_NETBIOS_$hostname.txt"
 "============= LLMNR Configuration =============" | Out-File $outputFileName -Append
 "`nGPO Setting: Computer Configuration -> Administrative Templates -> Network -> DNS Client -> Enable Turn Off Multicast Name Resolution" | Out-File $outputFileName -Append
@@ -800,7 +835,7 @@ else
 # check if cleartext credentials are saved in lsass memory for WDigest
 # turned on by default for Win7/2008/8/2012, to fix it you must install kb2871997 and than fix the registry value below
 # turned off by default for Win8.1/2012R2 and above
-write-host Getting WDigest credentials configuration... -ForegroundColor Yellow
+writeToScreen -str "Getting WDigest credentials configuration..." -ForegroundColor Yellow
 $outputFileName = "$hostname\WDigest_$hostname.txt"
 "============= WDigest Configuration =============" | Out-File $outputFileName -Append
 $WDigest = Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" UseLogonCredential -ErrorAction SilentlyContinue
@@ -835,7 +870,7 @@ else
 }
 
 # check for Net Session enumeration permissions
-write-host Getting NetSession configuration... -ForegroundColor Yellow
+writeToScreen -str "Getting NetSession configuration..." -ForegroundColor Yellow
 $outputFileName = "$hostname\NetSession_$hostname.txt"
 "============= NetSession Configuration =============" | Out-File $outputFileName -Append
 "By default, on Windows 2016 (and below) and old builds of Windows 10, any authenticated user can enumerate the SMB sessions on a computer, which is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound." | Out-File $outputFileName -Append
@@ -858,7 +893,7 @@ $SecurityDesc.DiscretionaryAcl | ForEach-Object {$_ | Add-Member -MemberType Scr
 $SessionRegValue | Out-File $outputFileName -Append
 
 # check for SAM enumeration permissions
-write-host Getting SAM enumeration configuration... -ForegroundColor Yellow
+writeToScreen -str "Getting SAM enumeration configuration..." -ForegroundColor Yellow
 $outputFileName = "$hostname\SAM-Enumeration_$hostname.txt"
 "============= Remote SAM (SAMR) Configuration =============" | Out-File $outputFileName -Append
 "`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups." | Out-File $outputFileName -Append
@@ -890,7 +925,7 @@ else
 
 
 # check for PowerShell v2 installation, which lacks security features (logging, AMSI)
-write-host Getting PowerShell versions... -ForegroundColor Yellow
+writeToScreen -str "Getting PowerShell versions..." -ForegroundColor Yellow
 $outputFileName = "$hostname\PowerShell-Versions_$hostname.txt"
 "PowerShell 1/2 are legacy versions which don't support logging and AMSI." | Out-File $outputFileName -Append
 "It's recommended to uninstall legacy PowerShell versions and make sure that only PowerShell 5+ is installed." | Out-File $outputFileName -Append
@@ -963,7 +998,7 @@ else
 
 
 # NTLMv2 enforcement check - check if there is a GPO that enforce the use of NTLMv2 (checking registry)
-write-host Getting NTLM version enforcment... -ForegroundColor Yellow
+writeToScreen -str "Getting NTLM version enforcment..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
 "`n============= NTLM Check =============" | Out-File $outputFileName -Append
 "NTLMv1 & LM are  legacy authentication protocols that are reversible" | Out-File $outputFileName -Append
@@ -985,7 +1020,7 @@ switch ($temp.lmcompatibilitylevel) {
 
 
 # GPO reprocess check
-write-host Getting GPO enforcment... -ForegroundColor Yellow
+writeToScreen -str "Getting GPO enforcment..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
 "`n============= GPO Reprocess Check =============" | Out-File $outputFileName -Append
 "If GPO reprocess is not enforced once the GPO received is the first and lest time the gpo is enforced (until next change)" | Out-File $outputFileName -Append
@@ -1013,7 +1048,7 @@ elseif ($temp.NoGPOListChanges -ne 0) {
 }
 
 # Powershell Audit settings check
-write-host Getting Powershell audit policy... -ForegroundColor Yellow
+writeToScreen -str "Getting Powershell audit policy..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Audit-Policy_$hostname.txt"
 "`n============= PowerShell Audit =============" | Out-File $outputFileName -Append
 " Powershell Audit is configured by three main settings modules, script block and transcript:" | Out-File $outputFileName -Append
@@ -1128,7 +1163,7 @@ if(!$bollCheck){
 
 
 # Check always install elevated setting
-write-host Getting Always install with elevation setting... -ForegroundColor Yellow
+writeToScreen -str "Getting Always install with elevation setting..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Domain-Hardning_$hostname.txt"
 "`n============= Always install elevated Check =============" | Out-File $outputFileName -Append
 "checking if GPO is configured to force installation as administrator - can be used by an attacker`n" | Out-File $outputFileName -Append
@@ -1146,7 +1181,7 @@ else{
 
 
 # get various system info (can take a few seconds)
-write-host Running systeminfo... -ForegroundColor Yellow
+writeToScreen -str "Running systeminfo..." -ForegroundColor Yellow
 $outputFileName = "$hostname\Systeminfo_$hostname.txt"
 # Get-ComputerInfo exists only in PowerShell 5.1 and above
 if ($PSVersionTable.PSVersion.ToString() -ge 5.1)
@@ -1160,23 +1195,22 @@ systeminfo >> $outputFileName
 #########################################################
 
 $currTime = Get-Date
-$outputFileName = "$hostname\Log_$hostname.txt"
-"Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss")  | Out-File $outputFileName -Append
-"Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds"  | Out-File $outputFileName -Append
+writeToLog -str ("Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss"))
+writeToLog -str ("Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds")  
 
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
 try
 {
     Compress-Archive -Path $hostname\* -DestinationPath $hostname -Force -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force -Path $hostname -ErrorAction SilentlyContinue
-    Write-Host All Done! Please send the output ZIP file. -ForegroundColor Green
+    writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
 }
 catch
 {
-    Write-Host All Done! Please ZIP all the files and send it back. -ForegroundColor Green
+    writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
 }
 
 $endTime = Get-Date
 $elapsed = $endTime - $startTime
-Write-Host The script took ([int]$elapsed.TotalSeconds) seconds. Thank you. -ForegroundColor Green
+writeToScreen -str ("The script took "+([int]$elapsed.TotalSeconds) +" seconds. Thank you.") -ForegroundColor Green
 Start-Sleep -Seconds 2
