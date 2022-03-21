@@ -108,11 +108,12 @@ function writeToFile {
     )
     if (!(Test-Path "$path\$file"))
     {
-        New-Item -path $path -name $file -type "file" -value $str"`n" | Out-Null
+        New-Item -path $path -name $file -type "file" -value $str | Out-Null
+        writeToFile -path $path -file $file -str""
     }
     else
     {
-        Add-Content -path "$path\$file" -value $str
+        Add-Content -path "$path\$file" -value $str -
     } 
 }
 #function that writes the log file
@@ -143,7 +144,7 @@ function dataWhoAmI {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToScreen -str "Running whoami..." -ForegroundColor Yellow
     writeToLog -str "running DataWhoAmI function"
-    writeToFile -file $outputFile -path $folderLocation -str "`Output of `"whoami /all`" command:`n"
+    writeToFile -file $outputFile -path $folderLocation -str "`Output of `"whoami /all`" command:`r`n"
     # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
     #$PrevErrorActionPreference = $ErrorActionPreference
     #$ErrorActionPreference = "SilentlyContinue"
@@ -156,10 +157,10 @@ function dataWhoAmI {
             writeToFile -file $outputFile -path $folderLocation -str (whoami /all)
         }
     #$ErrorActionPreference = $PrevErrorActionPreference
-    writeToFile -file $outputFile -path $folderLocation -str "`n========================================================================================================" 
-    writeToFile -file $outputFile -path $folderLocation -str "`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:"
-    writeToFile -file $outputFile -path $folderLocation -str "`nSeImpersonatePrivilege`nSeAssignPrimaryPrivilege`nSeTcbPrivilege`nSeBackupPrivilege`nSeRestorePrivilege`nSeCreateTokenPrivilege`nSeLoadDriverPrivilege`nSeTakeOwnershipPrivilege`nSeDebugPrivilege " 
-    writeToFile -file $outputFile -path $folderLocation -str "`nSee the following guide for more info:`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n========================================================================================================" 
+    writeToFile -file $outputFile -path $folderLocation -str "`r`nSome rights allow for local privilege escalation to SYSTEM and shouldn't be granted to non-admin users:"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`nSeImpersonatePrivilege `r`nSeAssignPrimaryPrivilege `r`nSeTcbPrivilege `r`nSeBackupPrivilege `r`nSeRestorePrivilege `r`nSeCreateTokenPrivilege `r`nSeLoadDriverPrivilege `r`nSeTakeOwnershipPrivilege `r`nSeDebugPrivilege " 
+    writeToFile -file $outputFile -path $folderLocation -str "`r`nSee the following guide for more info:`r`nhttps://book.hacktricks.xyz/windows/windows-local-privilege-escalation/privilege-escalation-abusing-tokens"
 }
 
 # get IP settings
@@ -170,7 +171,7 @@ function dataIpSettings {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToScreen -str "Running ipconfig..." -ForegroundColor Yellow
     writeToLog -str "running DataIpSettings function"
-    writeToFile -file $outputFile -path $folderLocation -str "`Output of `"ipconfig /all`" command:`n" 
+    writeToFile -file $outputFile -path $folderLocation -str "`Output of `"ipconfig /all`" command:`r`n" 
     writeToFile -file $outputFile -path $folderLocation -str (ipconfig /all) 
 }
 
@@ -341,7 +342,7 @@ function dataInstalledHotfixes {
     writeToFile -file $outputFile -path $folderLocation -str "https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" 
     writeToFile -file $outputFile -path $folderLocation -str "https://en.wikipedia.org/wiki/Windows_10_version_history" 
     writeToFile -file $outputFile -path $folderLocation -str "https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" 
-    writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-HotFix`" PowerShell command, sorted by installation date:`n" 
+    writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-HotFix`" PowerShell command, sorted by installation date:`r`n" 
     writeToFile -file $outputFile -path $folderLocation -str (Get-HotFix | Sort-Object InstalledOn -Descending -ErrorAction SilentlyContinue )
     <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
     if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
@@ -361,7 +362,7 @@ function dataRunningProcess {
     writeToLog -str "running dataRunningProcess function"
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToScreen -str "Getting processes..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str  "Output of `"Get-Process`" PowerShell command:`n"
+    writeToFile -file $outputFile -path $folderLocation -str  "Output of `"Get-Process`" PowerShell command:`r`n"
     try {
         writeToFile -file $outputFile -path $folderLocation -str (Get-Process -IncludeUserName | Format-Table -AutoSize ProcessName, id, company, ProductVersion, username, cpu, WorkingSet | Out-String -Width 180 | Out-String) 
     }
@@ -380,7 +381,7 @@ function dataServices {
     writeToLog -str "running dataServices function"
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToScreen -str "Getting services..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-WmiObject win32_service`" PowerShell command:`n"
+    writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-WmiObject win32_service`" PowerShell command:`r`n"
     writeToFile -file $outputFile -path $folderLocation -str (Get-WmiObject win32_service  | Sort-Object displayname | Format-Table -AutoSize DisplayName, Name, State, StartMode, StartName | Out-String -Width 180 | Out-String)
 }
 
@@ -426,7 +427,7 @@ function dataSharedFolders{
                 {
                 # Unfortunately, some of the shares security settings are missing from the WMI. Complicated stuff. Google "Count of shares != Count of share security"
                 writeToLog -str "Function dataSharedFolders:Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting."
-                writeToFile -file $outputFile -path $folderLocation -str "Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting.`n" }
+                writeToFile -file $outputFile -path $folderLocation -str "Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting.`r`n" }
             else
             {
                 $DACLs = (Get-WmiObject -Class Win32_LogicalShareSecuritySetting -Filter "Name='$shareName'" -ErrorAction SilentlyContinue).GetSecurityDescriptor().Descriptor.DACL
@@ -457,7 +458,7 @@ function dataAccountPolicy {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToScreen -str "Getting local and domain account policy..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= Local Account Policy ============="
-    writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET ACCOUNTS`" command:`n"
+    writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET ACCOUNTS`" command:`r`n"
     writeToFile -file $outputFile -path $folderLocation -str (NET ACCOUNTS)
     # check if the computer is in a domain
     writeToFile -file $outputFile -path $folderLocation -str "============= Domain Account Policy ============="
@@ -465,7 +466,7 @@ function dataAccountPolicy {
     {
         if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
         {
-            writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET ACCOUNTS /domain`" command:`n" 
+            writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET ACCOUNTS /domain`" command:`r`n" 
             writeToFile -file $outputFile -path $folderLocation -str (NET ACCOUNTS /domain) 
         }    
         else
@@ -493,20 +494,20 @@ function dataLocalUsers {
     {
         writeToScreen -str "Getting local users + administrators..." -ForegroundColor Yellow
         writeToFile -file $outputFile -path $folderLocation -str "============= Local Administrators ============="
-        writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET LOCALGROUP administrators`" command:`n"
+        writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET LOCALGROUP administrators`" command:`r`n"
         writeToFile -file $outputFile -path $folderLocation -str (NET LOCALGROUP administrators)
         writeToFile -file $outputFile -path $folderLocation -str "============= Local Users ============="
         # Get-LocalUser exists only in Windows 10 / 2016
         try
         {
-            writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-LocalUser`" PowerShell command:`n" 
+            writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-LocalUser`" PowerShell command:`r`n" 
             writeToFile -file $outputFile -path $folderLocation -str (Get-LocalUser | Format-Table name, enabled, AccountExpires, PasswordExpires, PasswordRequired, PasswordLastSet, LastLogon, description, SID | Out-String -Width 180 | Out-String)
         }
         catch
         {
             if($psVer -ge 3){
-                writeToFile -file $outputFile -path $folderLocation -str "Getting information regarding local users from WMI.`n"
-                writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-CimInstance win32_useraccount -Namespace `"root\cimv2`" -Filter `"LocalAccount=`'$True`'`"`" PowerShell command:`n"
+                writeToFile -file $outputFile -path $folderLocation -str "Getting information regarding local users from WMI.`r`n"
+                writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-CimInstance win32_useraccount -Namespace `"root\cimv2`" -Filter `"LocalAccount=`'$True`'`"`" PowerShell command:`r`n"
                 writeToFile -file $outputFile -path $folderLocation -str (Get-CimInstance win32_useraccount -Namespace "root\cimv2" -Filter "LocalAccount='$True'" | Select-Object Caption,Disabled,Lockout,PasswordExpires,PasswordRequired,Description,SID | format-table -autosize | Out-String -Width 180 | Out-String)
             }
             else{
@@ -687,7 +688,7 @@ function dataRDPSecuirty {
         writeToFile -file $outputFile -path $folderLocation -str "MaxDisconnectionTime = Time limit for disconnected RDP sessions" 
         writeToFile -file $outputFile -path $folderLocation -str "fResetBroken = Log off session (instead of disconnect) when time limits are reached" 
         writeToFile -file $outputFile -path $folderLocation -str "60000 = 1 minute, 3600000 = 1 hour, etc."
-        writeToFile -file $outputFile -path $folderLocation -str "`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits"
+        writeToFile -file $outputFile -path $folderLocation -str "`r`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits"
     } 
 }
 
@@ -727,6 +728,9 @@ function dataCredentialGuard {
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw Device Guard Settings from Get-ComputerInfo ============="
         writeToFile -file $outputFile -path $folderLocation -str ($DevGuardPS | Out-String)
     }
+    else{
+        writeToLog -str "Function dataCredentialGuard: not supported OS no check is needed..."
+    }
     
 }
 
@@ -751,6 +755,9 @@ function dataLSAProtectionConf {
             else
                 {writeToFile -file $outputFile -path $folderLocation -str "LSA protection is off. Which is bad and a possible finding."}
         }
+    }
+    else{
+        writeToLog -str "Function dataLSAProtectionConf: not supported OS no check is needed"
     }
     
 }
@@ -808,14 +815,14 @@ function checkAntiVirusStatus {
             $AntiVirusProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiVirusProduct
             $FirewallProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class FirewallProduct
             $AntiSpywareProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiSpywareProduct
-            writeToFile -file $outputFile -path $folderLocation -str "Security products status was taken from WMI values on WMI namespace `"root\SecurityCenter2`".`n"
+            writeToFile -file $outputFile -path $folderLocation -str "Security products status was taken from WMI values on WMI namespace `"root\SecurityCenter2`".`r`n"
         }
         else
         {
             $AntiVirusProducts = Get-WmiObject -Namespace root\SecurityCenter -Class AntiVirusProduct
             $FirewallProducts = Get-WmiObject -Namespace root\SecurityCenter -Class FirewallProduct
             $AntiSpywareProducts = Get-WmiObject -Namespace root\SecurityCenter -Class AntiSpywareProduct
-            writeToFile -file $outputFile -path $folderLocation -str "Security products status was taken from WMI values on WMI namespace `"root\SecurityCenter`".`n"
+            writeToFile -file $outputFile -path $folderLocation -str "Security products status was taken from WMI values on WMI namespace `"root\SecurityCenter`".`r`n"
         }
         if ($null -eq $AntiVirusProducts)
             {writeToFile -file $outputFile -path $folderLocation -str "No Anti Virus products were found."}
@@ -844,7 +851,7 @@ function checkAntiVirusStatus {
         writeToFile -file $outputFile -path $folderLocation -str "============= Anti-Spyware Products Status (Raw Data) =============" 
         writeToFile -file $outputFile -path $folderLocation -str ($AntiSpywareProducts | Out-String)
         # check Windows Defender settings
-        writeToFile -file $outputFile -path $folderLocation -str "============= Windows Defender Settings Status =============`n"
+        writeToFile -file $outputFile -path $folderLocation -str "============= Windows Defender Settings Status =============`r`n"
         $WinDefenderSettings = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager"
         switch ($WinDefenderSettings.AllowRealtimeMonitoring)
         {
@@ -898,10 +905,10 @@ function dataWinFirewall {
         # The NetFirewall commands are supported from Windows 8/2012 (version 6.2) and powershell is 4 and above
         if ($psVer -ge 4 -and (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2)))) # version should be 6.2+
         { 
-            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
+            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`r`n"
             writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallProfile is:"
-            writeToFile -file $outputFile -path $folderLocation -str Get-NetFirewallProfile -PolicyStore ActiveStore | Out-String   
-            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
+            writeToFile -file $outputFile -path $folderLocation -str (Get-NetFirewallProfile -PolicyStore ActiveStore | Out-String)   
+            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`r`n"
             writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information there."
             $temp = $folderLocation + "\" + (getNameForFile -name $name -extention ".csv")
             #Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $temp -NoTypeInformation - removed replaced by Nir's Offer
@@ -921,7 +928,7 @@ function dataWinFirewall {
         }
         if ($runningAsAdmin)
         {
-            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
+            writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`r`n"
             writeToLog -str "Function dataWinFirewall: Exporting to wfw" 
             $temp = $folderLocation + "\" + (getNameForFile -name $name -extention ".wfw")
             netsh advfirewall export $temp | Out-Null
@@ -954,7 +961,7 @@ function checkLLMNRAndNetBIOS {
     else
         {writeToFile -file $outputFile -path $folderLocation -str "LLMNR is enabled, which is a finding, especially for workstations."}
         writeToFile -file $outputFile -path $folderLocation -str "============= NETBIOS Name Service Configuration ============="
-        writeToFile -file $outputFile -path $folderLocation -str "Checking the NETBIOS Node Type configuration - see 'https://getadmx.com/?Category=KB160177#' for details...`n"
+        writeToFile -file $outputFile -path $folderLocation -str "Checking the NETBIOS Node Type configuration - see 'https://getadmx.com/?Category=KB160177#' for details...`r`n"
     $NodeType = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Services\NetBT\Parameters" NodeType -ErrorAction SilentlyContinue).NodeType
     if ($NodeType -eq 2)
         {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server), which is secure."}
@@ -970,7 +977,7 @@ function checkLLMNRAndNetBIOS {
 
         writeToFile -file $outputFile -path $folderLocation -str "Checking the NETBIOS over TCP/IP configuration for each network interface."
         writeToFile -file $outputFile -path $folderLocation -str "Network interface properties -> IPv4 properties -> Advanced -> WINS -> NetBIOS setting"
-        writeToFile -file $outputFile -path $folderLocation -str "`nNetbiosOptions=0 is default, and usually means enabled, which is not secure and a possible finding."
+        writeToFile -file $outputFile -path $folderLocation -str "`r`nNetbiosOptions=0 is default, and usually means enabled, which is not secure and a possible finding."
         writeToFile -file $outputFile -path $folderLocation -str "NetbiosOptions=1 is enabled, which is not secure and a possible finding."
         writeToFile -file $outputFile -path $folderLocation -str "NetbiosOptions=2 is disabled, which is secure."
         writeToFile -file $outputFile -path $folderLocation -str "If NetbiosOptions is set to 2 for the main interface, NetBIOS Name Service is protected against poisoning attacks even though the NodeType is not set to P-node, and this is not a finding."
@@ -1042,7 +1049,7 @@ function checkNetSessionEnum {
     writeToFile -file $outputFile -path $folderLocation -str "--------- Security Descriptor Check ---------"
     # copied from Get-NetSessionEnumPermission
     writeToFile -file $outputFile -path $folderLocation -str "Below are the permissions granted to enumerate net sessions."
-    writeToFile -file $outputFile -path $folderLocation -str "If the Authenticated Users group has permissions, this is a finding.`n"
+    writeToFile -file $outputFile -path $folderLocation -str "If the Authenticated Users group has permissions, this is a finding.`r`n"
     $SessionRegValue = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity SrvsvcSessionInfo).SrvsvcSessionInfo
     $SecurityDesc = New-Object -TypeName System.Security.AccessControl.CommonSecurityDescriptor -ArgumentList ($true,$false,$SessionRegValue,0)
     writeToFile -file $outputFile -path $folderLocation -str ($SecurityDesc.DiscretionaryAcl | ForEach-Object {$_ | Add-Member -MemberType ScriptProperty -Name TranslatedSID -Value ({$this.SecurityIdentifier.Translate([System.Security.Principal.NTAccount]).Value}) -PassThru} | Out-String)
@@ -1051,7 +1058,7 @@ function checkNetSessionEnum {
     writeToFile -file $outputFile -path $folderLocation -str "Default value for Windows 2019 and newer builds of Windows 10 (hardened): 1,0,4,128,160,0,0,0,172"
     writeToFile -file $outputFile -path $folderLocation -str "Default value for Windows 2016, older builds of Windows 10 and older OS versions (not secure - finding): 1,0,4,128,120,0,0,0,132"
     writeToFile -file $outputFile -path $folderLocation -str "Value after running NetCease (hardened): 1,0,4,128,20,0,0,0,32"
-    writeToFile -file $outputFile -path $folderLocation -str "`nThe SrvsvcSessionInfo registry value under HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity is set to:"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`nThe SrvsvcSessionInfo registry value under HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity is set to:"
     writeToFile -file $outputFile -path $folderLocation -str ($SessionRegValue | Out-String)
 }
 
@@ -1064,14 +1071,14 @@ function checkSAMEnum{
     writeToLog -str "running checkSAMEnum function"
     writeToScreen -str "Getting SAM enumeration configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= Remote SAM (SAMR) Configuration ============="
-    writeToFile -file $outputFile -path $folderLocation -str "`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups."
+    writeToFile -file $outputFile -path $folderLocation -str "`r`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups."
     writeToFile -file $outputFile -path $folderLocation -str "However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound."
     writeToFile -file $outputFile -path $folderLocation -str "These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'."
     writeToFile -file $outputFile -path $folderLocation -str "The newer OS versions are also recommended to be configured with the policy, though it is not essential."
-    writeToFile -file $outputFile -path $folderLocation -str "`nSee more details here:"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`nSee more details here:"
     writeToFile -file $outputFile -path $folderLocation -str "https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-access-restrict-clients-allowed-to-make-remote-sam-calls"
     writeToFile -file $outputFile -path $folderLocation -str "https://blog.stealthbits.com/making-internal-reconnaissance-harder-using-netcease-and-samri1o"
-    writeToFile -file $outputFile -path $folderLocation -str "`n----------------------------------------------------"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n----------------------------------------------------"
 
     $RestrictRemoteSAM = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa RestrictRemoteSAM -ErrorAction SilentlyContinue
     if ($null -eq $RestrictRemoteSAM)
@@ -1188,19 +1195,19 @@ function checkNTLMv2 {
     writeToFile -file $outputFile -path $folderLocation -str "============= NTLM Check ============="
     writeToFile -file $outputFile -path $folderLocation -str "NTLMv1 & LM are  legacy authentication protocols that are reversible"
     writeToFile -file $outputFile -path $folderLocation -str "If there are legacy systems in the network configure Level 3 NTLM hardning on the domain (that way only the lagacy system will use the legacy authentication) otherwise select Level 5"
-    writeToFile -file $outputFile -path $folderLocation -str "For more information go to: https://docs.microsoft.com/en-us/troubleshoot/windows-client/windows-security/enable-ntlm-2-authentication `n"
+    writeToFile -file $outputFile -path $folderLocation -str "For more information go to: https://docs.microsoft.com/en-us/troubleshoot/windows-client/windows-security/enable-ntlm-2-authentication `r`n"
     $temp = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LmCompatibilityLevel -ErrorAction SilentlyContinue # registry key that contains the NTLM restrications
     if($null -eq $temp){
-        writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default`n" #using system default depends on OS version
+        writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default`r`n" #using system default depends on OS version
     }
     switch ($temp.lmcompatibilitylevel) {
-        (0) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" }
-        (1) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" }
-        (2) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`n" }
-        (3) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration`n"}
-        (4) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration`n"}
-        (5) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - A good thing!)`n"}
-        Default {writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`n"}
+        (0) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
+        (1) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
+        (2) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
+        (3) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration`r`n"}
+        (4) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration`r`n"}
+        (5) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - A good thing!)`r`n"}
+        Default {writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`r`n"}
     }
 }
 
@@ -1212,9 +1219,9 @@ function checkGPOReprocess {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToLog -str "running checkGPOReprocess function"
     writeToScreen -str "Getting GPO enforcment..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`n============= GPO Reprocess Check ============="
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= GPO Reprocess Check ============="
     writeToFile -file $outputFile -path $folderLocation -str "If GPO reprocess is not enforced once the GPO received is the first and lest time the gpo is enforced (until next change)"
-    writeToFile -file $outputFile -path $folderLocation -str "GPO can be overridden with administrator premission - it is recommended that all security settings will be repossessed every time the system checks for GPO change`n"
+    writeToFile -file $outputFile -path $folderLocation -str "GPO can be overridden with administrator premission - it is recommended that all security settings will be repossessed every time the system checks for GPO change`r`n"
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains registry polciy reprocess settings 
     if($null -eq $temp){
         writeToFile -file $outputFile -path $folderLocation -str ' > GPO regirstry policy reprocess is not configured "processed even if not changed"' 
@@ -1247,8 +1254,8 @@ function checkInstallElevated {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToLog -str "running checkInstallElevated function"
     writeToScreen -str "Getting Always install with elevation setting..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`n============= Always install elevated Check ============="
-    writeToFile -file $outputFile -path $folderLocation -str "checking if GPO is configured to force installation as administrator - can be used by an attacker`n"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Always install elevated Check ============="
+    writeToFile -file $outputFile -path $folderLocation -str "checking if GPO is configured to force installation as administrator - can be used by an attacker`r`n"
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
     if($null -eq $temp){
         writeToFile -file $outputFile -path $folderLocation -str ' > No GPO for for "Always install with elevation"'
@@ -1270,12 +1277,12 @@ function checkPowrshellAudit {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToLog -str "running checkPowrshellAudit function"
     writeToScreen -str "Getting Powershell audit policy..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`n============= PowerShell Audit ============="
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= PowerShell Audit ============="
     writeToFile -file $outputFile -path $folderLocation -str " Powershell Audit is configured by three main settings modules, script block and transcript:"
     writeToFile -file $outputFile -path $folderLocation -str "  - Model logging - audits the modules used in powershell commands\scripts"
     writeToFile -file $outputFile -path $folderLocation -str "  - Script block - audits the use of script block in powershell commands\scripts"
     writeToFile -file $outputFile -path $folderLocation -str "  - Transcript - audits the commands running in powershell"
-    writeToFile -file $outputFile -path $folderLocation -str " For comprehensive audit trail all of those need to be configured and each of them has a special setting that need to be configured to work properly (for example in module audit you need to specify witch modules to audit)`n"
+    writeToFile -file $outputFile -path $folderLocation -str " For comprehensive audit trail all of those need to be configured and each of them has a special setting that need to be configured to work properly (for example in module audit you need to specify witch modules to audit)`r`n"
     # --- Start Of Module Logging ---
     writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Module audit: "
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in Computer-Space
@@ -1409,7 +1416,7 @@ function dataSystemInfo {
         writeToFile -file $outputFile -path $folderLocation -str "============= Get-ComputerInfo =============" 
         writeToFile -file $outputFile -path $folderLocation -str (Get-ComputerInfo | Out-String)
     }
-    writeToFile -file $outputFile -path $folderLocation -str "`n============= systeminfo ============="
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= systeminfo ============="
     writeToFile -file $outputFile -path $folderLocation -str (systeminfo | Out-String)
 }
 
@@ -1421,7 +1428,7 @@ function dataAuditPolicy {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToLog -str "running dataAuditSettings function"
     writeToScreen -str "getting audit policy settings..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`n============= Audit Policy Configuration ============="
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Audit Policy Configuration ============="
     if ($winVersion.Major -ge 6)
     {
         if($runningAsAdmin)
@@ -1440,8 +1447,7 @@ function checkCommandLineAudit {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToLog -str "running checkCommandLineAudit function"
     writeToScreen -str "checking command line audit..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`n============= Command line Audit ============="
-    writeToFile -file $outputFile -path $folderLocation -str ""
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Command line Audit ============="
     writeToFile -file $outputFile -path $folderLocation -str "Command line Audit tracks all commands running in the CLI"
     writeToFile -file $outputFile -path $folderLocation -str "Supported windows is 8/2012R2 and above"
 
