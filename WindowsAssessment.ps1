@@ -987,8 +987,8 @@ function checkWDigest {
             if (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 1))    
                 {writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding."}
             else
-                {writeToFile -file $outputFile -path $folderLocation -str "The operating system version is not supported. You have worse problems than WDigest configuration."}
-                {writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS."}
+                {writeToFile -file $outputFile -path $folderLocation -str "The operating system version is not supported. You have worse problems than WDigest configuration."
+                writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS."}
         }
     }
     else
@@ -1257,13 +1257,19 @@ function checkPowrshellAudit {
     if($null -eq $temp){
         $temp = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in User-Space 
         if($null -ne $temp -and $temp.EnableModuleLogging -eq 1){
-            $temp2 = Get-ItemPropertyValue -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames\" -name * -ErrorAction SilentlyContinue # registry that contains which Module are logged in User-Space  
-            if($temp2 -cnotcontains "*"){
+            $booltest = $false
+            $temp2 = Get-Item -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -ErrorAction SilentlyContinue
+            foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
+                if($item -eq "*"){
+                    $booltest = $True
+                }
+            }
+            if(!$booltest){
                 writeToFile -file $outputFile -path $folderLocation -str  " > PowerShell - Module logging is enforced on all modules but only on the user"
             }
             else{
                 writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is enforced only on the user and not on all modules" 
-                writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames") -ErrorAction SilentlyContinue | Out-String # getting which Module are logged in User-Space  
+                writeToFile -file $outputFile -path $folderLocation -str ($temp2 | Select-Object -ExpandProperty Property | Out-String) # getting which Module are logged in User-Space  
             } 
         }
         else {
@@ -1271,10 +1277,16 @@ function checkPowrshellAudit {
         }
     }
     elseif($temp.EnableModuleLogging -eq 1){
-        $temp2 = Get-ItemPropertyValue -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -Name * -ErrorAction SilentlyContinue # registry that contains which Module are logged in Computer-Space
-        if($temp2 -cnotcontains "*"){
+        $booltest = $false
+        $temp2 = Get-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -ErrorAction SilentlyContinue # registry that contains which Module are logged in Computer-Space
+        foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
+            if($item -eq "*"){
+                $booltest = $True
+            }
+        }
+        if(!$booltest){
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is not enforced on all modules:" 
-            writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames"  -ErrorAction SilentlyContinue | Out-String) # getting which Module are logged in User-Space  
+            writeToFile -file $outputFile -path $folderLocation -str ($temp2 | Select-Object -ExpandProperty Property | Out-String) # getting which Module are logged in User-Space  
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is enforced on all modules"
@@ -1515,7 +1527,7 @@ writeToLog -str ("Total Running Time (before zipping): " + [int]($currTime - $st
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
 try
 {
-    Compress-Archive -Path $hostname\* -DestinationPath $hostname -Force -ErrorAction SilentlyContinue
+    Compress-Archive -Path $folderLocation\* -DestinationPath $folderLocation -Force -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force -Path $hostname -ErrorAction SilentlyContinue
     writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
 }
