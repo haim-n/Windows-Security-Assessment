@@ -1533,7 +1533,20 @@ try
 }
 catch
 {
-    writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
+    try{
+        $fullPath = Get-Location
+        $fullPath = $fullPath.path
+        $fullPath += "\"+$folderLocation
+        $zipLocation = $fullPath+".zip"
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::CreateFromDirectory($fullPath,$zipLocation)
+        Remove-Item -Recurse -Force -Path $hostname -ErrorAction SilentlyContinue
+        writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
+    }
+    catch{
+        writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
+        writeToLog -str "Unknown error faild to zip folder"
+    }
 }
 
 $endTime = Get-Date
