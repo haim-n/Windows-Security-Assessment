@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.20" # used for logging purposes
+$Version = "1.21" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -42,7 +42,6 @@ $Version = "1.20" # used for logging purposes
 - Log the time of each operation to the log file (create a function for it and reuse)
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 - Change script structure to functions - Done
-- Zip files without the need for PowerShell 5.0
 ##########################################################
 Controls Checklist:
 - OS is up to date (hotfixes file shows recent updates)
@@ -87,7 +86,7 @@ Controls Checklist:
 - GPO Enforce reprocess check (Domain-Hardning file)
 - Always install with elevated privileges setting (Domain-Hardning file)
 ##########################################################
-@Haim Nachmias
+@Haim Nachmias @Nital Ruzin
 ##########################################################>
 
 ###Genral Vals
