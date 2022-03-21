@@ -89,13 +89,6 @@ Controls Checklist:
 @Haim Nachmias @Nital Ruzin
 ##########################################################>
 
-###Genral Vals
-# get hostname to use as the folder name and file names
-$hostname = hostname
-$folderLocation = $hostname
-# get the windows version for later use
-$winVersion = [System.Environment]::OSVersion.Version
-
 ### functions
 #function to write to screen
 function writeToScreen {
@@ -234,18 +227,18 @@ function dataGPO {
             gpresult /f /h $gpoPath
             # /h doesn't exists on Windows 2003, so we run without /h into txt file
             if (!(Test-Path $gpoPath)) {
-                writeToLog -str "dataGPO function: gpresult faild to export to HTML exporting in txt format"
+                writeToLog -str "Function dataGPO: gpresult faild to export to HTML exporting in txt format"
                 $gpoPath = $folderLocation+"\"+(getNameForFile -name $name -extention ".txt")
                 gpresult $gpoPath
             }
             else{
-                writeToLog -str "dataGPO function: gpresult exported successfully "
+                writeToLog -str "Function dataGPO: gpresult exported successfully "
             }
         }
         else
         {
             writeToScreen -str "Unable to get GPO configuration... the computer is not connected to the domain" -ForegroundColor Red
-            writeToLog -str "dataGPO function: Unable to get GPO configuration... the computer is not connected to the domain "
+            writeToLog -str "Function dataGPO: Unable to get GPO configuration... the computer is not connected to the domain "
         }
     }
 }
@@ -263,13 +256,13 @@ function dataSecurityPolicy {
         writeToScreen -str "Getting security policy settings..." -ForegroundColor Yellow
         secedit /export /CFG $sPPath | Out-Null
         if(!(Test-Path $sPPath)){
-            writeToLog -str "dataSecurityPolicy function: failed to export security policy unknown resone"
+            writeToLog -str "Function dataSecurityPolicy: failed to export security policy unknown resone"
         }
     }
     else
     {
         writeToScreen -str "Unable to get security policy settings... elevated admin permissions are required" -ForegroundColor Red
-        writeToLog -str "dataSecurityPolicy function: Unable to get security policy settings... elevated admin permissions are required"
+        writeToLog -str "Function dataSecurityPolicy: Unable to get security policy settings... elevated admin permissions are required"
     }
 }
 
@@ -286,18 +279,18 @@ function dataWinFeatures {
         # first check if we can fetch Windows features in any way - Windows workstation without RunAsAdmin cannot fetch features (also Win2008 but it's rare...)
         if ((!$runningAsAdmin) -and ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1))
         {
-            writeToLog -str "dataWinFeatures function: Unable to get Windows features... elevated admin permissions are required"
+            writeToLog -str "Function dataWinFeatures: Unable to get Windows features... elevated admin permissions are required"
             writeToScreen -str "Unable to get Windows features... elevated admin permissions are required" -ForegroundColor Red
         }
         else
         {
-            writeToLog -str "dataWinFeatures function: Getting Windows features..."
+            writeToLog -str "Function dataWinFeatures: Getting Windows features..."
             writeToScreen -str "Getting Windows features..." -ForegroundColor Yellow
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "There are several ways of getting the Windows features. Some require elevation. See the following for details: https://hahndorf.eu/blog/WindowsFeatureViaCmd"
         # get features with Get-WindowsFeature. Requires Windows SERVER 2008R2 or above
-        if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 1)) # version should be 7+ or 6.1+
+        if ($psVer -ge 4 -and (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 1))) # version should be 7+ or 6.1+
         {
             if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3))
             {
@@ -306,8 +299,11 @@ function dataWinFeatures {
                 writeToFile -file $outputFile -path $folderLocation -str $temp
             }
         }
+        else{
+            writeToLog -str "Function dataWinFeatures: unable to run Get-WindowsFeature - requare wubdiws server 2008R2 and above and powershell version 4"
+        }
         # get features with Get-WindowsOptionalFeature. Requires Windows 8/2012 or above and run-as-admin
-        if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)) # version should be 7+ or 6.2+
+        if ($psVer -ge 4 -and (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))) # version should be 7+ or 6.2+
         {
             writeToFile -file $outputFile -path $folderLocation -str "============= Output of: Get-WindowsOptionalFeature -Online ============="
             if ($runningAsAdmin)
@@ -317,6 +313,9 @@ function dataWinFeatures {
                 }
             else
                 {writeToFile -file $outputFile -path $folderLocation -str "Unable to run Get-WindowsOptionalFeature without running as admin. Consider running again with elevated admin permissions."}
+        }
+        else {
+            writeToLog -str "Function dataWinFeatures: unable to run Get-WindowsOptionalFeature - requare wubdiws server 8/2008R2 and above and powershell version 4"
         }
         # get features with dism. Requires run-as-admin
         writeToFile -file $outputFile -path $folderLocation -str "============= Output of: dism /online /get-features /format:table | ft =============" 
@@ -426,7 +425,7 @@ function dataSharedFolders{
             if ($null -eq $shareSecSettings)
                 {
                 # Unfortunately, some of the shares security settings are missing from the WMI. Complicated stuff. Google "Count of shares != Count of share security"
-                writeToLog -str "dataSharedFolders function:Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting."
+                writeToLog -str "Function dataSharedFolders:Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting."
                 writeToFile -file $outputFile -path $folderLocation -str "Couldn't find share permissions, doesn't exist in WMI Win32_LogicalShareSecuritySetting.`n" }
             else
             {
@@ -471,13 +470,13 @@ function dataAccountPolicy {
         }    
         else
             {
-                writeToLog -str "dataAccountPolicy function: Error No connection to the domain."
+                writeToLog -str "Function dataAccountPolicy: Error No connection to the domain."
                 writeToFile -file $outputFile -path $folderLocation -str "Error: No connection to the domain." 
             }
     }
     else
     {
-        writeToLog -str "dataAccountPolicy function: Error The computer is not part of a domain."
+        writeToLog -str "Function dataAccountPolicy: Error The computer is not part of a domain."
         writeToFile -file $outputFile -path $folderLocation -str "Error: The computer is not part of a domain."
     }
 }
@@ -505,9 +504,14 @@ function dataLocalUsers {
         }
         catch
         {
-            writeToFile -file $outputFile -path $folderLocation -str "Getting information regarding local users from WMI.`n"
-            writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-CimInstance win32_useraccount -Namespace `"root\cimv2`" -Filter `"LocalAccount=`'$True`'`"`" PowerShell command:`n"
-            writeToFile -file $outputFile -path $folderLocation -str (Get-CimInstance win32_useraccount -Namespace "root\cimv2" -Filter "LocalAccount='$True'" | Select-Object Caption,Disabled,Lockout,PasswordExpires,PasswordRequired,Description,SID | format-table -autosize | Out-String -Width 180 | Out-String)
+            if($psVer -ge 3){
+                writeToFile -file $outputFile -path $folderLocation -str "Getting information regarding local users from WMI.`n"
+                writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-CimInstance win32_useraccount -Namespace `"root\cimv2`" -Filter `"LocalAccount=`'$True`'`"`" PowerShell command:`n"
+                writeToFile -file $outputFile -path $folderLocation -str (Get-CimInstance win32_useraccount -Namespace "root\cimv2" -Filter "LocalAccount='$True'" | Select-Object Caption,Disabled,Lockout,PasswordExpires,PasswordRequired,Description,SID | format-table -autosize | Out-String -Width 180 | Out-String)
+            }
+            else{
+                writeToLog -str "Function dataLocalUsers: unsupported powershell version to run Get-CimInstance skiping..."
+            }
         }
     }
     
@@ -522,34 +526,42 @@ function checkSMBHardening {
     $outputFile = getNameForFile -name $name -extention ".txt"
     writeToScreen -str "Getting SMB hardening configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= SMB versions Support (Server Settings) =============" 
-    # Check if Windows Vista/2008 or above
+    # Check if Windows Vista/2008 or above and powershell version 4 and up 
     if ($winVersion.Major -ge 6)
     {
+        
         $SMB1 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB1 -ErrorAction SilentlyContinue
         $SMB2 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB2 -ErrorAction SilentlyContinue
-        $smbServerConfig = Get-SmbServerConfiguration
-        $smbClientConfig = Get-SmbClientConfiguration
         if ($SMB1.SMB1 -eq 0)
             {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is not supported (based on registry values). Which is nice." }
         else
             {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is supported (based on registry values). Which is pretty bad and a finding." }
-        if (!$smbConfig.EnableSMB1Protocol)
+        # unknown var will all return false always
+        <#
+        if (!$smbConfig.EnableSMB1Protocol) 
             {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is not supported (based on Get-SmbServerConfiguration). Which is nice."}
         else
             {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is supported (based on Get-SmbServerConfiguration). Which is pretty bad and a finding."}
             writeToFile -file $outputFile -path $folderLocation -str "---------------------------------------" 
+        #>
         if ($SMB2.SMB2 -eq 0)
             {writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are not supported (based on registry values). Which is weird, but not a finding." }
         else
             {writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are supported (based on registry values). Which is OK." }
-        if (!$smbServerConfig.EnableSMB2Protocol)
-            {writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is not supported (based on Get-SmbServerConfiguration). Which is weird, but not a finding." }
-        else
-            {writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is supported (based on Get-SmbServerConfiguration). Which is OK." }
+        if($psVer -ge 4){
+            $smbServerConfig = Get-SmbServerConfiguration
+            $smbClientConfig = Get-SmbClientConfiguration
+            if (!$smbServerConfig.EnableSMB2Protocol)
+                {writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is not supported (based on Get-SmbServerConfiguration). Which is weird, but not a finding." }
+            else
+                {writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is supported (based on Get-SmbServerConfiguration). Which is OK." }
+        }
+        
     }
     else
     {
         writeToFile -file $outputFile -path $folderLocation -str "Old Windows versions (XP or 2003) support only SMB1." 
+        writeToLog -str "Function checkSMBHardening: unable to run windows too old"
     }
     writeToFile -file $outputFile -path $folderLocation -str "============= SMB versions Support (Client Settings) ============="
     # Check if Windows Vista/2008 or above
@@ -622,7 +634,7 @@ function checkSMBHardening {
             writeToFile -file $outputFile -path $folderLocation -str "SMB signing is disabled by the client. This computer is susceptible to man-in-the-middle attacks. A finding."
         }
     }
-    if (($null -ne $smbServerConfig) -and ($null -ne $smbClientConfig)) {
+    if ($psVer -ge 4 -and($null -ne $smbServerConfig) -and ($null -ne $smbClientConfig)) {
         # potentially, we can also check SMB signing configuration using PowerShell:
         <#"---------------------------------------" | Out-File $outputFileName -Append
         "Get-SmbClientConfiguration SMB client-side signing details:" | Out-File $outputFileName -Append
@@ -631,6 +643,9 @@ function checkSMBHardening {
         writeToFile -file $outputFile -path $folderLocation -str ($smbServerConfig | Out-String)
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw Data - Get-SmbClientConfiguration ============="
         writeToFile -file $outputFile -path $folderLocation -str ($smbClientConfig | Out-String)
+    }
+    else{
+        writeToLog -str "Function checkSMBHardening: unable to run Get-SmbClientConfiguration and Get-SmbServerConfiguration - Skipping checks " 
     }
     
 }
@@ -880,8 +895,8 @@ function dataWinFirewall {
     if ((Get-Service mpssvc).status -eq "Running")
     {
         writeToFile -file $outputFile -path $folderLocation -str "The Windows Firewall service is running."
-        # The NetFirewall commands are supported from Windows 8/2012 (version 6.2)
-        if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
+        # The NetFirewall commands are supported from Windows 8/2012 (version 6.2) and powershell is 4 and above
+        if ($psVer -ge 4 -and (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2)))) # version should be 6.2+
         { 
             writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
             writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallProfile is:"
@@ -890,7 +905,7 @@ function dataWinFirewall {
             writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information there."
             $temp = $folderLocation + "\" + (getNameForFile -name $name -extention ".csv")
             #Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $temp -NoTypeInformation - removed replaced by Nir's Offer
-            writeToLog -str "dataWinFirewall function: Exporting to CSV"
+            writeToLog -str "Function dataWinFirewall: Exporting to CSV"
             Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object { $_.Enabled -eq $True } | Select-Object -Property PolicyStoreSourceType, Name, DisplayName, DisplayGroup,
             @{Name='Protocol';Expression={($PSItem | Get-NetFirewallPortFilter).Protocol}},
             @{Name='LocalPort';Expression={($PSItem | Get-NetFirewallPortFilter).LocalPort}},
@@ -901,10 +916,13 @@ function dataWinFirewall {
             @{Name='Package';Expression={($PSItem | Get-NetFirewallApplicationFilter).Package}},
             Enabled, Profile, Direction, Action | export-csv -NoTypeInformation $temp
         }
+        else{
+            writeToLog -str "Function dataWinFirewall: unable to run NetFirewall commands - skiping (old OS \ powershell is below 4)"
+        }
         if ($runningAsAdmin)
         {
             writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`n"
-            writeToLog -str "dataWinFirewall function: Exporting to wfw" 
+            writeToLog -str "Function dataWinFirewall: Exporting to wfw" 
             $temp = $folderLocation + "\" + (getNameForFile -name $name -extention ".wfw")
             netsh advfirewall export $temp | Out-Null
             writeToFile -file $outputFile -path $folderLocation -str "Firewall rules exported into $temp" 
@@ -979,15 +997,17 @@ function checkWDigest {
         writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry value wasn't found."
         # check if running on Windows 6.3 or above
         if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
-            {"`nThe WDigest protocol is turned off by default for Win8.1/2012R2 and above. So it is OK, but still recommended to set the UseLogonCredential registry value to 0, to revert malicious attempts of enabling WDigest." | Out-File $outputFileName -Append}
+            {writeToFile -file $outputFile -path $folderLocation -str  "The WDigest protocol is turned off by default for Win8.1/2012R2 and above. So it is OK, but still recommended to set the UseLogonCredential registry value to 0, to revert malicious attempts of enabling WDigest."}
         else
         {
             # check if running on Windows 6.1/6.2, which can be hardened, or on older version
             if (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 1))    
                 {writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding."}
             else
-                {writeToFile -file $outputFile -path $folderLocation -str "The operating system version is not supported. You have worse problems than WDigest configuration."
-                writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS."}
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "The operating system version is not supported. You have worse problems than WDigest configuration."
+                writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS."
+            }
         }
     }
     else
@@ -1113,8 +1133,8 @@ function checkPowershellVer {
     {
         Get-Job | Remove-Job -Force
     }
-    # use Get-WindowsFeature if running on Windows SERVER 2008R2 or above
-    if (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 1))) # version should be 7+ or 6.1+
+    # use Get-WindowsFeature if running on Windows SERVER 2008R2 or above and powershell is equal or above version 4
+    if ($psVer -ge 4 -and (($winVersion.Major -ge 7) -or (($winVersion.Major -ge 6) -and ($winVersion.Minor -ge 1)))) # version should be 7+ or 6.1+
     {
         if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3)) # type should be server or DC
         {
@@ -1122,8 +1142,11 @@ function checkPowershellVer {
             writeToFile -file $outputFile -path $folderLocation -str (Get-WindowsFeature -Name PowerShell-V2 | Out-String)
         }    
     }
-    # use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin
-    if (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2))) # version should be 6.2+
+    else {
+        writeToLog -str "Function checkPowershellVer: unable to run Get-WindowsFeature - requare wubdiws server 2008R2 and above and powershell version 4"
+    }
+    # use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin and powershell is equal or above version 4
+    if ($psVer -ge 4 -and (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2)))) # version should be 6.2+
     {    
         writeToFile -file $outputFile -path $folderLocation -str "============= Checking if PowerShell 2 Windows Feature is enabled with Get-WindowsOptionalFeature =============" 
         if ($runningAsAdmin)
@@ -1134,6 +1157,9 @@ function checkPowershellVer {
         {
             writeToFile -file $outputFile -path $folderLocation -str "Cannot run Get-WindowsOptionalFeature when non running as admin." 
         }
+    }
+    else {
+        writeToLog -str "Function checkPowershellVer: unable to run Get-WindowsOptionalFeature - requare wubdiws server 8/2012R2 and above and powershell version 4"
     }
     # run registry check
     writeToFile -file $outputFile -path $folderLocation -str "============= Registry Check =============" 
@@ -1387,6 +1413,78 @@ function dataSystemInfo {
     writeToFile -file $outputFile -path $folderLocation -str (systeminfo | Out-String)
 }
 
+# get audit Policy configuration
+function dataAuditPolicy {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running dataAuditSettings function"
+    writeToScreen -str "getting audit policy settings..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`n============= Audit Policy Configuration ============="
+    if ($winVersion.Major -ge 6)
+    {
+        if($runningAsAdmin)
+        {writeToFile -file $outputFile -path $folderLocation -str (auditpol /get /category:* | Format-Table | Out-String)}
+        else{
+            writeToLog -str "Function dataAuditSettings: unable to get auditpol data not running as admin"
+        }
+    }
+}
+
+#check if command line audit is enabled
+function checkCommandLineAudit {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkCommandLineAudit function"
+    writeToScreen -str "checking command line audit..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`n============= Command line Audit ============="
+    writeToFile -file $outputFile -path $folderLocation -str ""
+    writeToFile -file $outputFile -path $folderLocation -str "Command line Audit tracks all commands running in the CLI"
+    writeToFile -file $outputFile -path $folderLocation -str "Supported windows is 8/2012R2 and above"
+
+    $reg = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System\Audit" -Name "ProcessCreationIncludeCmdLine_Enabled" -ErrorAction SilentlyContinue # registry key that contains the NTLM restrications
+    if ((($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))){
+        if($null -eq $reg){
+            writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured - this is bad" #using system default depends on OS version
+        }
+        elseif($reg.ProcessCreationIncludeCmdLine_Enabled -ne 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured currectly - this is bad" #using system default depends on OS version
+        }
+        else{
+            if($runningAsAdmin)
+            {
+                $test = auditpol /get /category:*
+                foreach ($item in $test){
+                    if($item -like "*Process Creation*No Auditing"){
+                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured currectly (Advance audit>Detailed Tracking>Process Creation is not configured)  - this is bad" 
+                    }
+                    elseif ($item -like "*Process Creation*") {
+                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is configured currectly - this is good" 
+                    }
+                }
+            }
+            else{
+                writeToLog -str "Function checkCommandLineAudit: unable to get auditpol data not running as admin cannot check setting"
+            }
+        }
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not supported in this OS (legacy) - this is bad" 
+    }
+}
+
+###Genral Vals
+# get hostname to use as the folder name and file names
+$hostname = hostname
+$folderLocation = $hostname
+# get the windows version for later use
+$winVersion = [System.Environment]::OSVersion.Version
+# powershell version 
+$psVer = Get-Host | Select-Object Version
+$psVer = $psVer.Version.Major
 ### start of script ###
 $startTime = Get-Date
 writeToScreen -str "Hello dear user!" -ForegroundColor "Green"
@@ -1419,6 +1517,7 @@ writeToLog -str "Running As Admin: $runningAsAdmin"
 $uptimeDate = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject Win32_OperatingSystem).LastBootUpTime)
 writeToLog -str ("System Uptime: Since " + $uptimeDate.ToString("dd/MM/yyyy HH:mm:ss")) 
 writeToLog -str "Script Version: $Version"
+writeToLog -str "Powershell version running the script: $psVer"
 writeToLog -str ("Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:ss") )
 
 ####Start of Checks
@@ -1509,7 +1608,13 @@ checkNTLMv2 -name "Domain-Hardning"
 checkGPOReprocess -name "Domain-Hardning"
 
 # Powershell Audit settings check
+checkCommandLineAudit -name "Audit-Policy"
+
+# Powershell Audit settings check
 checkPowrshellAudit -name "Audit-Policy"
+
+# Powershell Audit settings check
+dataAuditPolicy -name "Audit-Policy"
 
 # Check always install elevated setting
 checkInstallElevated -name "Domain-Hardning"
@@ -1524,28 +1629,27 @@ writeToLog -str ("Script End Time (before zipping): " + $currTime.ToString("dd/M
 writeToLog -str ("Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds")  
 
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
-try
-{
+if($psVer -ge 5){
     Compress-Archive -Path $folderLocation\* -DestinationPath $folderLocation -Force -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force -Path $hostname -ErrorAction SilentlyContinue
     writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
 }
-catch
-{
-    try{
+elseif ($psVer -eq 4 ) {
         $fullPath = Get-Location
         $fullPath = $fullPath.path
         $fullPath += "\"+$folderLocation
         $zipLocation = $fullPath+".zip"
+        if(Test-Path $zipLocation){
+            Remove-Item -Force -Path $zipLocation
+        }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::CreateFromDirectory($fullPath,$zipLocation)
         Remove-Item -Recurse -Force -Path $hostname -ErrorAction SilentlyContinue
         writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
-    }
-    catch{
-        writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
-        writeToLog -str "Unknown error faild to zip folder"
-    }
+}
+else{
+    writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
+    writeToLog -str "powershell running the script is below 4 script is not supporting ziping below that"
 }
 
 $endTime = Get-Date
