@@ -7,7 +7,7 @@ $Version = "1.21" # used for logging purposes
 - Output the results to a single file with a simple table
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
 - Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
-- Check for bugs in the SMB1 check
+- Check for bugs in the SMB1 check - fixed need to check
 - Log errors to a log file using Start/Stop-Transcript
 - Debug the FirewallProducts check
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP (reg key)
@@ -27,7 +27,7 @@ $Version = "1.21" # used for logging purposes
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings
-- Check if safe mode access by non-admins is blocked (based on SafeModeBlockNonAdmins reg value)
+- Check if safe mode access by non-admins is blocked (based on SafeModeBlockNonAdmins reg value) - in work
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Enhance internet connectivity checks (add traceroute, curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
@@ -1589,6 +1589,31 @@ function checkLogSize {
 
 }
 
+#Check if safe mode access by non-admins is blocked
+function checkSafeModeAcc4NonAdmin {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkSafeModeAcc4NonAdmin function"
+    writeToScreen -str "Checking if safe mode access by non-admins is blocked" -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Safe mode access by non-admins ============="
+    writeToFile -file $outputFile -path $folderLocation -str "If safe mode can be accessed by non admins there is an option of privilege escalation on this machine for an attacker - requared diract access"
+
+    $reg = Get-ItemProperty -Path "HKLM\SOFTWARE\Microsoft\Windows\Curr entVersion\Policies\System" -Name "SafeModeBlockNonAdmins" -ErrorAction SilentlyContinue # registry key that contains the safe mode resrication
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > No hardning on Safe mode access by non admins - might be a finding"
+    }
+    else{
+        if($reg.SafeModeBlockNonAdmins -eq 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > Block Safe mode access by non admins is enabled - this is a good thing"
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Block Safe mode access by non admins is Disabled - might be a finding"
+        }
+    }
+}
+
 ###Genral Vals
 # get hostname to use as the folder name and file names
 $hostname = hostname
@@ -1734,6 +1759,9 @@ dataAuditPolicy -name "Audit-Policy"
 
 # Check always install elevated setting
 checkInstallElevated -name "Domain-Hardning"
+
+#Check if safe mode access by non-admins is blocked
+checkSafeModeAcc4NonAdmin -name "Domain-Hardning"
 
 # get various system info (can take a few seconds)
 dataSystemInfo -name "Systeminfo"
