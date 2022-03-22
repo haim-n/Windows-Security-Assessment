@@ -29,8 +29,7 @@ $Version = "1.21" # used for logging purposes
 - Check Macro and DDE (OLE) settings
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
-- Enhance internet connectivity checks (add traceroute, curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
-- Check if internet DNS servers (8.8.8.8, etc.) are accessible
+- Enhance internet connectivity checks (use proxy configuration) -need to check proxy 
 - Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
 - Check for Device Control (GPO or dedicated software)
 - Check ability to connect to Wi-Fi while connected to wired (Interface settings \ Disable Upon Wired Connect)
@@ -105,7 +104,7 @@ function writeToFile {
     if (!(Test-Path "$path\$file"))
     {
         New-Item -path $path -name $file -type "file" -value $str | Out-Null
-        writeToFile -path $path -file $file -str""
+        writeToFile -path $path -file $file -str ""
     }
     else
     {
@@ -178,17 +177,89 @@ function checkInternetAccess{
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkInternetAccess function"
-    writeToScreen -str "Trying to ping the internet..." -ForegroundColor Yellow
+    writeToScreen -str "Trying to access the internet this check will take maximum 30 sec... " -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= ping -n 2 8.8.8.8 =============" 
     writeToFile -file $outputFile -path $folderLocation -str (ping -n 2 8.8.8.8)
-    # more detailed test for newer PowerShell versions - takes a lot of time and not very important
-    #try {
-        # "============= Test-NetConnection -InformationLevel Detailed =============" | Out-File $outputFileName -Append
-        # Test-NetConnection -InformationLevel Detailed | Out-File $outputFileName -Append
-        #"============= Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed =============" | Out-File $outputFileName -Append
-        #Test-NetConnection -ComputerName www.google.com -Port 443 -InformationLevel Detailed | Out-File $outputFileName -Append
-    #}
-    #catch {"Test-NetConnection command doesn't exists, old powershell version." | Out-File $outputFileName -Append}
+    writeToFile -file $outputFile -path $folderLocation -str "============= DNS request for 8.8.8.8 =============" 
+    $test = Resolve-DnsName -Name google.com -Server 8.8.8.8 -QuickTimeout -NoRecursion -NoIdn -ErrorAction SilentlyContinue
+    if($null -ne $test){
+        writeToFile -file $outputFile -path $folderLocation -str " > DNS request was successful "
+    }
+    else{
+        riteToFile -file $outputFile -path $folderLocation -str " > DNS request received a timeout "
+    }
+    writeToFile -file $outputFile -path $folderLocation -str (ping -n 2 8.8.8.8)
+    if($psVer -ge 4){
+        writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net =============" 
+        $test = $null
+        $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net" -ErrorAction SilentlyContinue
+        if($null -ne $test){
+            if($test.StatusCode -eq 200){
+                writeToFile -file $outputFile -path $folderLocation -str " > port 80 is open " 
+            }
+            else {
+                $str = " > test received http code: "+$test.StatusCode+" port 80 might be close - FW URL filtering might block this test "
+                writeToFile -file $outputFile -path $folderLocation -str $str  
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > port 80 received a time out "
+        }
+
+        writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:443 =============" 
+        $test = $null
+        $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:443" -ErrorAction SilentlyContinue
+        if($null -ne $test){
+            if($test.StatusCode -eq 200){
+                writeToFile -file $outputFile -path $folderLocation -str " > port 443 is open " 
+            }
+            else {
+                $str = " > test received http code: "+$test.StatusCode+" port 443 might be close - FW URL filtering might block this test "
+                writeToFile -file $outputFile -path $folderLocation -str $str  
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > port 443 received a time out "
+        }
+
+        writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:666 =============" 
+        $test = $null
+        $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:666" -ErrorAction SilentlyContinue
+        if($null -ne $test){
+            if($test.StatusCode -eq 200){
+                writeToFile -file $outputFile -path $folderLocation -str " > port 666 is open " 
+            }
+            else {
+                $str = " > test received http code: "+$test.StatusCode+" port 666 might be close - FW URL filtering might block this test "
+                writeToFile -file $outputFile -path $folderLocation -str $str  
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > port 666 received a time out "
+        }
+
+        writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:8080 =============" 
+        $test = $null
+        $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:8080" -ErrorAction SilentlyContinue
+        if($null -ne $test){
+            if($test.StatusCode -eq 200){
+                writeToFile -file $outputFile -path $folderLocation -str " > port 8080 is open " 
+            }
+            else {
+                $str = " > test received http code: "+$test.StatusCode+" port 8080 might be close - FW URL filtering might block this test "
+                writeToFile -file $outputFile -path $folderLocation -str $str  
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > port 8080 received a time out "
+        }
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " powershell is lower then version 4 other checks are not supported "
+    }
+    writeToFile -file $outputFile -path $folderLocation -str "============= tracert -d -w 100 8.8.8.8 =============" 
+    writeToFile -file $outputFile -path $folderLocation -str (tracert -d -w 100 8.8.8.8)
+
 }
 
 # get network connections (run-as admin is required for -b associated application switch)
