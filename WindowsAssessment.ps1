@@ -45,7 +45,7 @@ Controls Checklist:
 - Credential guard is running (Credential-Guard file, Win 10/2016 and above)
 - SMB Signing is enforced (SMB file)
 - SMB1 Server is not installed (SMB file)
-- NTLMv2 is enforced  (Domain-Hardning file)
+- NTLMv2 is enforced  (Domain-Hardening file)
 - LLMNR is disabled (LLMNR_and_NETBIOS file)
 - NETBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
 - WDigest is disabled (WDigest file)
@@ -79,8 +79,8 @@ Controls Checklist:
 - Macros are restricted
 - Defender ASR rules are configured (AntiVirus file)
 - Host firewall rules are configured to block inbound (Windows-Firewall and Windows-Firewall-Rules files)
-- GPO Enforce reprocess check (Domain-Hardning file)
-- Always install with elevated privileges setting (Domain-Hardning file)
+- GPO Enforce reprocess check (Domain-Hardening file)
+- Always install with elevated privileges setting (Domain-Hardening file)
 ##########################################################
 @Haim Nachmias @Nital Ruzin
 ##########################################################>
@@ -97,7 +97,7 @@ function writeToScreen {
     Write-Host $str -ForegroundColor $ForegroundColor
 }
 
-#funtion that writes to file gets 3 params (path = folder , file = file name , str string to write in the file)
+#function that writes to file gets 3 params (path = folder , file = file name , str string to write in the file)
 function writeToFile {
     param (
         $path, $file, $str
@@ -117,27 +117,27 @@ function writeToLog {
     param (
         [string]$str
     )
-    $stemp = (Get-Date).ToString("yyyy/MM/dd HH:mm:ss")
-    $logMassage = "$stemp $str"
+    $stamp = (Get-Date).ToString("yyyy/MM/dd HH:mm:ss")
+    $logMassage = "$stamp $str"
     writeToFile -path $hostname -file "Log_$hostname.txt" -str $logMassage
 }
 
 function getNameForFile{
     param(
         $name,
-        $extention
+        $extension
     )
-    if($null -eq $extention){
-        $extention = ".txt"
+    if($null -eq $extension){
+        $extension = ".txt"
     }
-    return ($name + "_" + $hostname+$extention)
+    return ($name + "_" + $hostname+$extension)
 }
 # get current user privileges
 function dataWhoAmI {
     param (
         $name 
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Running whoami..." -ForegroundColor Yellow
     writeToLog -str "running DataWhoAmI function"
     writeToFile -file $outputFile -path $folderLocation -str "`Output of `"whoami /all`" command:`r`n"
@@ -164,7 +164,7 @@ function dataIpSettings {
     param (
         $name 
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Running ipconfig..." -ForegroundColor Yellow
     writeToLog -str "running DataIpSettings function"
     writeToFile -file $outputFile -path $folderLocation -str "`Output of `"ipconfig /all`" command:`r`n" 
@@ -176,7 +176,7 @@ function checkInternetAccess{
     param (
         $name 
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkInternetAccess function"
     writeToScreen -str "Trying to ping the internet..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= ping -n 2 8.8.8.8 =============" 
@@ -196,7 +196,7 @@ function getNetCon {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running getNetCon function"
     writeToScreen -str "Running netstat..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= netstat -nao ============="
@@ -219,13 +219,13 @@ function dataGPO {
         # check if we have connectivity to the domain, or if is a DC
         if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or (Test-ComputerSecureChannel))
         {
-            $gpoPath = $folderLocation+"\"+(getNameForFile -name $name -extention ".html")
+            $gpoPath = $folderLocation+"\"+(getNameForFile -name $name -extension ".html")
             writeToScreen -str "Running GPResult to get GPOs..." -ForegroundColor Yellow
             gpresult /f /h $gpoPath
             # /h doesn't exists on Windows 2003, so we run without /h into txt file
             if (!(Test-Path $gpoPath)) {
-                writeToLog -str "Function dataGPO: gpresult faild to export to HTML exporting in txt format"
-                $gpoPath = $folderLocation+"\"+(getNameForFile -name $name -extention ".txt")
+                writeToLog -str "Function dataGPO: gpresult failed to export to HTML exporting in txt format"
+                $gpoPath = $folderLocation+"\"+(getNameForFile -name $name -extension ".txt")
                 gpresult $gpoPath
             }
             else{
@@ -247,13 +247,13 @@ function dataSecurityPolicy {
     )
     writeToLog -str "running dataSecurityPolicy function"
     # to open the *.inf output file, open MMC, add snap-in "Security Templates", right click and choose new path, choose the *.inf file path, and open it
-    $sPPath = $hostname+"\"+(getNameForFile -name $name -extention ".inf")
+    $sPPath = $hostname+"\"+(getNameForFile -name $name -extension ".inf")
     if ($runningAsAdmin)
     {
         writeToScreen -str "Getting security policy settings..." -ForegroundColor Yellow
         secedit /export /CFG $sPPath | Out-Null
         if(!(Test-Path $sPPath)){
-            writeToLog -str "Function dataSecurityPolicy: failed to export security policy unknown resone"
+            writeToLog -str "Function dataSecurityPolicy: failed to export security policy unknown reason"
         }
     }
     else
@@ -269,7 +269,7 @@ function dataWinFeatures {
         $name
     )
     writeToLog -str "running dataWinFeatures function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
 
     if ($winVersion.Major -ge 6)
     {    
@@ -297,7 +297,7 @@ function dataWinFeatures {
             }
         }
         else{
-            writeToLog -str "Function dataWinFeatures: unable to run Get-WindowsFeature - requare wubdiws server 2008R2 and above and powershell version 4"
+            writeToLog -str "Function dataWinFeatures: unable to run Get-WindowsFeature - require windows server 2008R2 and above and powershell version 4"
         }
         # get features with Get-WindowsOptionalFeature. Requires Windows 8/2012 or above and run-as-admin
         if ($psVer -ge 4 -and (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))) # version should be 7+ or 6.2+
@@ -312,7 +312,7 @@ function dataWinFeatures {
                 {writeToFile -file $outputFile -path $folderLocation -str "Unable to run Get-WindowsOptionalFeature without running as admin. Consider running again with elevated admin permissions."}
         }
         else {
-            writeToLog -str "Function dataWinFeatures: unable to run Get-WindowsOptionalFeature - requare wubdiws server 8/2008R2 and above and powershell version 4"
+            writeToLog -str "Function dataWinFeatures: unable to run Get-WindowsOptionalFeature - require windows server 8/2008R2 and above and powershell version 4"
         }
         # get features with dism. Requires run-as-admin
         writeToFile -file $outputFile -path $folderLocation -str "============= Output of: dism /online /get-features /format:table | ft =============" 
@@ -332,7 +332,7 @@ function dataInstalledHotfixes {
         $name
     )
     writeToLog -str "running dataInstalledHotfixes function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting installed hotfixes..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str ("The OS version is: " + [System.Environment]::OSVersion + ". See if this version is supported according to the following pages:")
     writeToFile -file $outputFile -path $folderLocation -str "https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions" 
@@ -356,7 +356,7 @@ function dataRunningProcess {
         $name
     )
     writeToLog -str "running dataRunningProcess function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting processes..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str  "Output of `"Get-Process`" PowerShell command:`r`n"
     try {
@@ -375,7 +375,7 @@ function dataServices {
         $name
     )
     writeToLog -str "running dataServices function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting services..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-WmiObject win32_service`" PowerShell command:`r`n"
     writeToFile -file $outputFile -path $folderLocation -str (Get-WmiObject win32_service  | Sort-Object displayname | Format-Table -AutoSize DisplayName, Name, State, StartMode, StartName | Out-String -Width 180 | Out-String)
@@ -387,7 +387,7 @@ function dataInstalledSoftware{
         $name
     )
     writeToLog -str "running dataInstalledSoftware function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting installed software..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Sort-Object DisplayName | Out-String -Width 180 | Out-String)
 }
@@ -398,7 +398,7 @@ function dataSharedFolders{
         $name
     )
     writeToLog -str "running dataSharedFolders function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting shared folders..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= Shared Folders ============="
     $shares = Get-WmiObject -Class Win32_Share
@@ -451,7 +451,7 @@ function dataAccountPolicy {
         $name
     )
     writeToLog -str "running dataAccountPolicy function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting local and domain account policy..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= Local Account Policy ============="
     writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET ACCOUNTS`" command:`r`n"
@@ -485,7 +485,7 @@ function dataLocalUsers {
     )
     # only run if no running on a domain controller
     writeToLog -str "running dataLocalUsers function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2)
     {
         writeToScreen -str "Getting local users + administrators..." -ForegroundColor Yellow
@@ -507,7 +507,7 @@ function dataLocalUsers {
                 writeToFile -file $outputFile -path $folderLocation -str (Get-CimInstance win32_useraccount -Namespace "root\cimv2" -Filter "LocalAccount='$True'" | Select-Object Caption,Disabled,Lockout,PasswordExpires,PasswordRequired,Description,SID | format-table -autosize | Out-String -Width 180 | Out-String)
             }
             else{
-                writeToLog -str "Function dataLocalUsers: unsupported powershell version to run Get-CimInstance skiping..."
+                writeToLog -str "Function dataLocalUsers: unsupported powershell version to run Get-CimInstance skipping..."
             }
         }
     }
@@ -520,7 +520,7 @@ function checkSMBHardening {
         $name
     )
     writeToLog -str "running checkSMBHardening function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting SMB hardening configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= SMB versions Support (Server Settings) =============" 
     # Check if Windows Vista/2008 or above and powershell version 4 and up 
@@ -653,7 +653,7 @@ function dataRDPSecuirty {
         $name
     )
     writeToLog -str "running dataRDPSecuirty function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting RDP security settings..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Settings (from WMI) ============="
     $WMIFilter = "TerminalName='RDP-tcp'" # there might be issues with the quotation marks - to debug
@@ -694,7 +694,7 @@ function dataCredentialGuard {
         $name
     )
     writeToLog -str "running dataCredentialGuard function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     if ($winVersion.Major -ge 10)
     {
         writeToScreen -str "Getting credential guard settings..." -ForegroundColor Yellow
@@ -736,7 +736,7 @@ function dataLSAProtectionConf {
         $name
     )
     writeToLog -str "running dataLSAProtectionConf function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
     {
         writeToScreen -str "Getting LSA protection settings..." -ForegroundColor Yellow
@@ -763,7 +763,7 @@ function checkSensitiveInfo {
     param (
         $name
     )   
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     if ($EnableSensitiveInfoSearch)
     {
         writeToLog -str "running checkSensitiveInfo function"
@@ -801,7 +801,7 @@ function checkAntiVirusStatus {
         $name
     )
     writeToLog -str "running checkAntiVirusStatus function"
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     # works only on Windows Clients, Not on Servers (2008, 2012, etc.). Maybe the "Get-MpPreference" could work on servers - wasn't tested.
     if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
     {
@@ -892,7 +892,7 @@ function dataWinFirewall {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running dataWinFirewall function"
     writeToScreen -str "Getting Windows Firewall configuration..." -ForegroundColor Yellow
     if ((Get-Service mpssvc).status -eq "Running")
@@ -906,7 +906,7 @@ function dataWinFirewall {
             writeToFile -file $outputFile -path $folderLocation -str (Get-NetFirewallProfile -PolicyStore ActiveStore | Out-String)   
             writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`r`n"
             writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information there."
-            $temp = $folderLocation + "\" + (getNameForFile -name $name -extention ".csv")
+            $temp = $folderLocation + "\" + (getNameForFile -name $name -extension ".csv")
             #Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $temp -NoTypeInformation - removed replaced by Nir's Offer
             writeToLog -str "Function dataWinFirewall: Exporting to CSV"
             Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object { $_.Enabled -eq $True } | Select-Object -Property PolicyStoreSourceType, Name, DisplayName, DisplayGroup,
@@ -920,13 +920,13 @@ function dataWinFirewall {
             Enabled, Profile, Direction, Action | export-csv -NoTypeInformation $temp
         }
         else{
-            writeToLog -str "Function dataWinFirewall: unable to run NetFirewall commands - skiping (old OS \ powershell is below 4)"
+            writeToLog -str "Function dataWinFirewall: unable to run NetFirewall commands - skipping (old OS \ powershell is below 4)"
         }
         if ($runningAsAdmin)
         {
             writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`r`n"
             writeToLog -str "Function dataWinFirewall: Exporting to wfw" 
-            $temp = $folderLocation + "\" + (getNameForFile -name $name -extention ".wfw")
+            $temp = $folderLocation + "\" + (getNameForFile -name $name -extension ".wfw")
             netsh advfirewall export $temp | Out-Null
             writeToFile -file $outputFile -path $folderLocation -str "Firewall rules exported into $temp" 
             writeToFile -file $outputFile -path $folderLocation -str "To view it, open gpmc.msc in a test environment, create a temporary GPO, get to Computer=>Policies=>Windows Settings=>Security Settings=>Windows Firewall=>Right click on Firewall icon=>Import Policy"
@@ -944,7 +944,7 @@ function checkLLMNRAndNetBIOS {
         $name
     )
     # LLMNR and NETBIOS-NS are insecure legacy protocols for local multicast DNS queries that can be abused by Responder/Inveigh
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkLLMNRAndNetBIOS function"
     writeToScreen -str "Getting LLMNR and NETBIOS-NS configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= LLMNR Configuration ============="
@@ -990,7 +990,7 @@ function checkWDigest {
     )
     # turned on by default for Win7/2008/8/2012, to fix it you must install kb2871997 and than fix the registry value below
     # turned off by default for Win8.1/2012R2 and above
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkWDigest function"
     writeToScreen -str "Getting WDigest credentials configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= WDigest Configuration ============="
@@ -1034,7 +1034,7 @@ function checkNetSessionEnum {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkNetSessionEnum function"
     writeToScreen -str "Getting NetSession configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= NetSession Configuration ============="
@@ -1063,12 +1063,12 @@ function checkSAMEnum{
     param(
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkSAMEnum function"
     writeToScreen -str "Getting SAM enumeration configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= Remote SAM (SAMR) Configuration ============="
     writeToFile -file $outputFile -path $folderLocation -str "`r`nBy default, in Windows 2016 (and above) and Windows 10 build 1607 (and above), only Administrators are allowed to make remote calls to SAM with the SAMRPC protocols, and (among other things) enumerate the members of the local groups."
-    writeToFile -file $outputFile -path $folderLocation -str "However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Contollers, enabling valuable reconnaissance, as leveraged by BloodHound."
+    writeToFile -file $outputFile -path $folderLocation -str "However, in older OS versions, low privileged domain users can also query the SAM with SAMRPC, which is a major vulnerability mainly on non-Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound."
     writeToFile -file $outputFile -path $folderLocation -str "These old OS versions (Windows 7/2008R2 and above) can be hardened by installing a KB and configuring only the Local Administrators group in the following GPO policy: 'Network access: Restrict clients allowed to make remote calls to SAM'."
     writeToFile -file $outputFile -path $folderLocation -str "The newer OS versions are also recommended to be configured with the policy, though it is not essential."
     writeToFile -file $outputFile -path $folderLocation -str "`r`nSee more details here:"
@@ -1100,7 +1100,7 @@ function checkPowershellVer {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkPowershellVer function"
     writeToScreen -str "Getting PowerShell versions..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "PowerShell 1/2 are legacy versions which don't support logging and AMSI."
@@ -1146,7 +1146,7 @@ function checkPowershellVer {
         }    
     }
     else {
-        writeToLog -str "Function checkPowershellVer: unable to run Get-WindowsFeature - requare wubdiws server 2008R2 and above and powershell version 4"
+        writeToLog -str "Function checkPowershellVer: unable to run Get-WindowsFeature - require windows server 2008R2 and above and powershell version 4"
     }
     # use Get-WindowsOptionalFeature if running on Windows 8/2012 or above, and running as admin and powershell is equal or above version 4
     if ($psVer -ge 4 -and (($winVersion.Major -gt 6) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 2)))) # version should be 6.2+
@@ -1162,7 +1162,7 @@ function checkPowershellVer {
         }
     }
     else {
-        writeToLog -str "Function checkPowershellVer: unable to run Get-WindowsOptionalFeature - requare wubdiws server 8/2012R2 and above and powershell version 4"
+        writeToLog -str "Function checkPowershellVer: unable to run Get-WindowsOptionalFeature - require windows server 8/2012R2 and above and powershell version 4"
     }
     # run registry check
     writeToFile -file $outputFile -path $folderLocation -str "============= Registry Check =============" 
@@ -1185,25 +1185,25 @@ function checkNTLMv2 {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkNTLMv2 function"
-    writeToScreen -str "Getting NTLM version enforcment..." -ForegroundColor Yellow
+    writeToScreen -str "Getting NTLM version enforcement..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= NTLM Check ============="
     writeToFile -file $outputFile -path $folderLocation -str "NTLMv1 & LM are  legacy authentication protocols that are reversible"
-    writeToFile -file $outputFile -path $folderLocation -str "If there are legacy systems in the network configure Level 3 NTLM hardning on the domain (that way only the lagacy system will use the legacy authentication) otherwise select Level 5"
+    writeToFile -file $outputFile -path $folderLocation -str "If there are legacy systems in the network configure Level 3 NTLM hardening on the domain (that way only the legacy system will use the legacy authentication) otherwise select Level 5"
     writeToFile -file $outputFile -path $folderLocation -str "For more information go to: https://docs.microsoft.com/en-us/troubleshoot/windows-client/windows-security/enable-ntlm-2-authentication `r`n"
-    $temp = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LmCompatibilityLevel -ErrorAction SilentlyContinue # registry key that contains the NTLM restrications
+    $temp = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LmCompatibilityLevel -ErrorAction SilentlyContinue # registry key that contains the NTLM restrictions
     if($null -eq $temp){
-        writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default`r`n" #using system default depends on OS version
+        writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default`r`n" #using system default depends on OS version
     }
     switch ($temp.lmcompatibilitylevel) {
-        (0) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
-        (1) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
-        (2) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
-        (3) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration`r`n"}
-        (4) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration`r`n"}
-        (5) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - A good thing!)`r`n"}
-        Default {writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authntication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`r`n"}
+        (0) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
+        (1) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
+        (2) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
+        (3) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration`r`n"}
+        (4) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration`r`n"}
+        (5) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - A good thing!)`r`n"}
+        Default {writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`r`n"}
     }
 }
 
@@ -1212,32 +1212,32 @@ function checkGPOReprocess {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkGPOReprocess function"
-    writeToScreen -str "Getting GPO enforcment..." -ForegroundColor Yellow
+    writeToScreen -str "Getting GPO enforcement..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= GPO Reprocess Check ============="
     writeToFile -file $outputFile -path $folderLocation -str "If GPO reprocess is not enforced once the GPO received is the first and lest time the gpo is enforced (until next change)"
-    writeToFile -file $outputFile -path $folderLocation -str "GPO can be overridden with administrator premission - it is recommended that all security settings will be repossessed every time the system checks for GPO change`r`n"
-    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains registry polciy reprocess settings 
+    writeToFile -file $outputFile -path $folderLocation -str "GPO can be overridden with administrator permission - it is recommended that all security settings will be repossessed every time the system checks for GPO change`r`n"
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains registry policy reprocess settings 
     if($null -eq $temp){
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO regirstry policy reprocess is not configured "processed even if not changed"' 
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is not configured "processed even if not changed"' 
     }
     elseif ($temp.NoGPOListChanges -ne 0) {
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO regirstry policy reprocess is not configured currectly "processed even if not changed"' 
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is not configured correctly "processed even if not changed"' 
     }
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains script policy reprocess settings 
     if($null -eq $temp){
         writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured "processed even if not changed"' 
     }
     elseif ($temp.NoGPOListChanges -ne 0) {
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured currectly "processed even if not changed"' 
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured correctly "processed even if not changed"' 
     }
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{827D319E-6EAC-11D2-A4EA-00C04F79F83A}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains security policy reprocess settings 
     if($null -eq $temp){
         writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is not configured "processed even if not changed"'
     }
     elseif ($temp.NoGPOListChanges -ne 0) {
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is not configured currectly "processed even if not changed"'
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is not configured correctly "processed even if not changed"'
     }
     
 }
@@ -1247,7 +1247,7 @@ function checkInstallElevated {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkInstallElevated function"
     writeToScreen -str "Getting Always install with elevation setting..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Always install elevated Check ============="
@@ -1260,7 +1260,7 @@ function checkInstallElevated {
         writeToFile -file $outputFile -path $folderLocation -str ' > Always install with elevated is enabled - this is a finding!'
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO for "Always install with elevated" is existing but not forceing installing with elevation'
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO for "Always install with elevated" is existing but not enforcing installing with elevation'
     }
     
 }
@@ -1270,7 +1270,7 @@ function checkPowrshellAudit {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkPowrshellAudit function"
     writeToScreen -str "Getting Powershell audit policy..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= PowerShell Audit ============="
@@ -1354,7 +1354,7 @@ function checkPowrshellAudit {
     }
     # --- End of ScriptBlock logging
     # --- Start Transcription logging 
-    writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Transcripting logging: "
+    writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Transcription logging: "
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableTranscripting -ErrorAction SilentlyContinue # registry containing transcripting logging setting - computer-space
     $bollCheck = $false
     if($null -eq $temp -or $temp.EnableTranscripting -ne 1){
@@ -1371,12 +1371,12 @@ function checkPowrshellAudit {
                 $bollCheck = $True
             }
             if(!$bollCheck){
-                writeToFile -file $outputFile -path $folderLocation -str " > Powershell - Transcription logging is enforced currectly but only on the user"
+                writeToFile -file $outputFile -path $folderLocation -str " > Powershell - Transcription logging is enforced correctly but only on the user"
                 $bollCheck = $True
             }
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is not enforced (logging input and outpot of powershell command)"
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is not enforced (logging input and output of powershell command)"
             $bollCheck = $True
         }
     }
@@ -1393,7 +1393,7 @@ function checkPowrshellAudit {
         }
     }
     if(!$bollCheck){
-        writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled and configured currectly" 
+        writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled and configured correctly" 
     }
     
 }
@@ -1403,7 +1403,7 @@ function dataSystemInfo {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running dataSystemInfo function"
     writeToScreen -str "Running systeminfo..." -ForegroundColor Yellow
     # Get-ComputerInfo exists only in PowerShell 5.1 and above
@@ -1421,7 +1421,7 @@ function dataAuditPolicy {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running dataAuditSettings function"
     writeToScreen -str "getting audit policy settings..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Audit Policy Configuration ============="
@@ -1440,20 +1440,20 @@ function checkCommandLineAudit {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkCommandLineAudit function"
     writeToScreen -str "checking command line audit..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Command line Audit ============="
     writeToFile -file $outputFile -path $folderLocation -str "Command line Audit tracks all commands running in the CLI"
     writeToFile -file $outputFile -path $folderLocation -str "Supported windows is 8/2012R2 and above"
 
-    $reg = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System\Audit" -Name "ProcessCreationIncludeCmdLine_Enabled" -ErrorAction SilentlyContinue # registry key that contains the NTLM restrications
+    $reg = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System\Audit" -Name "ProcessCreationIncludeCmdLine_Enabled" -ErrorAction SilentlyContinue # registry key that contains the NTLM restrictions
     if ((($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))){
         if($null -eq $reg){
             writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured - this is bad" #using system default depends on OS version
         }
         elseif($reg.ProcessCreationIncludeCmdLine_Enabled -ne 1){
-            writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured currectly - this is bad" #using system default depends on OS version
+            writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured correctly - this is bad" #using system default depends on OS version
         }
         else{
             if($runningAsAdmin)
@@ -1461,10 +1461,10 @@ function checkCommandLineAudit {
                 $test = auditpol /get /category:*
                 foreach ($item in $test){
                     if($item -like "*Process Creation*No Auditing"){
-                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured currectly (Advance audit>Detailed Tracking>Process Creation is not configured)  - this is bad" 
+                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured correctly (Advance audit>Detailed Tracking>Process Creation is not configured)  - this is bad" 
                     }
                     elseif ($item -like "*Process Creation*") {
-                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is configured currectly - this is good" 
+                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is configured correctly - this is good" 
                     }
                 }
             }
@@ -1483,7 +1483,7 @@ function checkLogSize {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkLogSize function"
     writeToScreen -str "checking log size configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= log size configuration ============="
@@ -1506,7 +1506,7 @@ function checkLogSize {
         $size = $Calc.tostring() + $size
         writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file is $size"
         if($applicationLogMaxSize.MaxSize -lt 32768){
-            writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is smaller then the recommandation (32768KB) - this is a finding"
+            writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is smaller then the recommendation (32768KB) - this is a finding"
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is equal or larger then (32768KB) - this is good"
@@ -1528,7 +1528,7 @@ function checkLogSize {
         $size = $Calc.tostring() + $size
         writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file is $size"
         if($systemLogMaxSize.MaxSize -lt 32768){
-            writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommandation (32768KB) - this is a finding"
+            writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommendation (32768KB) - this is a finding"
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is equal or larger then (32768KB) - this is good"
@@ -1550,7 +1550,7 @@ function checkLogSize {
         $size = $Calc.tostring() + $size
         writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file is $size"
         if($securityLogMaxSize.MaxSize -lt 196604){
-            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is smaller then the recommandation (196604KB ) - this is a finding"
+            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is smaller then the recommendation (196604KB ) - this is a finding"
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is equal or larger then (32768KB) - this is good"
@@ -1572,7 +1572,7 @@ function checkLogSize {
             $size = [String]::Parse($Calc) + $size
             writeToFile -file $outputFile -path $folderLocation -str " > Setup maximum log file is $size"
             if($setupLogMaxSize.MaxSize -lt 32768){
-                writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommandation (32768KB) - this is a finding"
+                writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommendation (32768KB) - this is a finding"
             }
             else{
                 writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is equal or larger then (32768KB) - this is good"
@@ -1593,15 +1593,15 @@ function checkSafeModeAcc4NonAdmin {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extention ".txt"
+    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkSafeModeAcc4NonAdmin function"
     writeToScreen -str "Checking if safe mode access by non-admins is blocked" -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Safe mode access by non-admins ============="
-    writeToFile -file $outputFile -path $folderLocation -str "If safe mode can be accessed by non admins there is an option of privilege escalation on this machine for an attacker - requared diract access"
+    writeToFile -file $outputFile -path $folderLocation -str "If safe mode can be accessed by non admins there is an option of privilege escalation on this machine for an attacker - required direct access"
 
-    $reg = Get-ItemProperty -Path "HKLM\SOFTWARE\Microsoft\Windows\Curr entVersion\Policies\System" -Name "SafeModeBlockNonAdmins" -ErrorAction SilentlyContinue # registry key that contains the safe mode resrication
+    $reg = Get-ItemProperty -Path "HKLM\SOFTWARE\Microsoft\Windows\Curr entVersion\Policies\System" -Name "SafeModeBlockNonAdmins" -ErrorAction SilentlyContinue # registry key that contains the safe mode restriction
     if($null -eq $reg){
-        writeToFile -file $outputFile -path $folderLocation -str " > No hardning on Safe mode access by non admins - might be a finding"
+        writeToFile -file $outputFile -path $folderLocation -str " > No hardening on Safe mode access by non admins - might be a finding"
     }
     else{
         if($reg.SafeModeBlockNonAdmins -eq 1){
@@ -1613,7 +1613,7 @@ function checkSafeModeAcc4NonAdmin {
     }
 }
 
-###Genral Vals
+###General val's
 # get hostname to use as the folder name and file names
 $hostname = hostname
 $folderLocation = $hostname
@@ -1739,10 +1739,10 @@ checkSAMEnum -name "SAM-Enumeration"
 checkPowershellVer -name "PowerShell-Versions"
 
 # NTLMv2 enforcement check - check if there is a GPO that enforce the use of NTLMv2 (checking registry)
-checkNTLMv2 -name "Domain-Hardning"
+checkNTLMv2 -name "Domain-Hardening"
 
 # GPO reprocess check
-checkGPOReprocess -name "Domain-Hardning"
+checkGPOReprocess -name "Domain-Hardening"
 
 # Commandline Audit settings check
 checkCommandLineAudit -name "Audit-Policy"
@@ -1757,10 +1757,10 @@ checkLogSize -name "Audit-Policy"
 dataAuditPolicy -name "Audit-Policy"
 
 # Check always install elevated setting
-checkInstallElevated -name "Domain-Hardning"
+checkInstallElevated -name "Domain-Hardening"
 
 #Check if safe mode access by non-admins is blocked
-checkSafeModeAcc4NonAdmin -name "Domain-Hardning"
+checkSafeModeAcc4NonAdmin -name "Domain-Hardening"
 
 # get various system info (can take a few seconds)
 dataSystemInfo -name "Systeminfo"
@@ -1792,7 +1792,7 @@ elseif ($psVer -eq 4 ) {
 }
 else{
     writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
-    writeToLog -str "powershell running the script is below 4 script is not supporting ziping below that"
+    writeToLog -str "powershell running the script is below 4 script is not supporting compression to zip below that"
 }
 
 $endTime = Get-Date
