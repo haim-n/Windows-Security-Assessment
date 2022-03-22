@@ -5,7 +5,6 @@ $Version = "1.21" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
-- Improve the Firewall Rules export functionality - integrate Nir's offer (currently commented out) - Done
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
 - Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check for bugs in the SMB1 check
@@ -27,7 +26,6 @@ $Version = "1.21" # used for logging purposes
 - Check AV/Defender configuration also on non-Windows 10
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
-- Check event log size settings
 - Check Macro and DDE (OLE) settings
 - Check if safe mode access by non-admins is blocked (based on SafeModeBlockNonAdmins reg value)
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
@@ -39,9 +37,8 @@ $Version = "1.21" # used for logging purposes
 - Check ability to connect to Wi-Fi while connected to wired (Interface settings \ Disable Upon Wired Connect)
 - Find misconfigured services which allow elevation of privileges
 - Add More settings from hardening docs
-- Log the time of each operation to the log file (create a function for it and reuse)
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
-- Change script structure to functions - Done
+
 ##########################################################
 Controls Checklist:
 - OS is up to date (hotfixes file shows recent updates)
@@ -113,7 +110,7 @@ function writeToFile {
     }
     else
     {
-        Add-Content -path "$path\$file" -value $str -
+        Add-Content -path "$path\$file" -value $str
     } 
 }
 #function that writes the log file
@@ -1482,6 +1479,116 @@ function checkCommandLineAudit {
     }
 }
 
+# check log file size configuration
+function checkLogSize {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extention ".txt"
+    writeToLog -str "running checkLogSize function"
+    writeToScreen -str "checking log size configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= log size configuration ============="
+    $applicationLogMaxSize = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\Application" -Name "MaxSize" -ErrorAction SilentlyContinue # registry key that contains the max size of log file
+    $securityLogMaxSize = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\Security" -Name "MaxSize" -ErrorAction SilentlyContinue # registry key that contains the max size of log file
+    $setupLogMaxSize = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\Setup" -Name "MaxSize" -ErrorAction SilentlyContinue # registry key that contains the max size of log file
+    $systemLogMaxSize = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\System" -Name "MaxSize" -ErrorAction SilentlyContinue # registry key that contains the max size of log file
+    $setupLogging = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\Setup" -Name "Enabled" -ErrorAction SilentlyContinue # registry key that contains if setup log is enabled
+
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n==== Application"
+    if($null -ne $applicationLogMaxSize){
+        
+        $size = "MB"
+        $Calc = [double]::Parse($applicationLogMaxSize.MaxSize) / 1024
+        if($Calc -ge 1024){
+            $Calc = $Calc / 1024
+            $size = "GB"
+        }
+
+        $size = $Calc.tostring() + $size
+        writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file is $size"
+        if($applicationLogMaxSize.MaxSize -lt 32768){
+            writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is smaller then the recommandation (32768KB) - this is a finding"
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is equal or larger then (32768KB) - this is good"
+        }
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file is not configured the default is 1MB this is a finding"
+    }
+
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n==== System"
+    if($null -ne $systemLogMaxSize){
+        
+        $size = "MB"
+        $Calc = [double]::Parse($systemLogMaxSize.MaxSize) / 1024
+        if($Calc -ge 1024){
+            $Calc = $Calc / 1024
+            $size = "GB"
+        }
+        $size = $Calc.tostring() + $size
+        writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file is $size"
+        if($systemLogMaxSize.MaxSize -lt 32768){
+            writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommandation (32768KB) - this is a finding"
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is equal or larger then (32768KB) - this is good"
+        }
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file is not configured the default is 1MB this is a finding"
+    }
+
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n==== Security"
+    if($null -ne $securityLogMaxSize){
+        
+        $size = "MB"
+        $Calc = [double]::Parse($securityLogMaxSize.MaxSize) / 1024
+        if($Calc -ge 1024){
+            $Calc = $Calc / 1024
+            $size = "GB"
+        }
+        $size = $Calc.tostring() + $size
+        writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file is $size"
+        if($securityLogMaxSize.MaxSize -lt 196604){
+            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is smaller then the recommandation (196604KB ) - this is a finding"
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is equal or larger then (32768KB) - this is good"
+        }
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file is not configured the default is 1MB this is a finding"
+    }
+
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n==== Setup"
+    if($null -ne $setupLogMaxSize){
+        if($setupLogging.Enable -eq 1){
+            $size = "MB"
+            $Calc = [double]::Parse($setupLogMaxSize.MaxSize) / 1024
+            if($Calc -ge 1024){
+                $Calc = $Calc / 1024
+                $size = "GB"
+            }
+            $size = [String]::Parse($Calc) + $size
+            writeToFile -file $outputFile -path $folderLocation -str " > Setup maximum log file is $size"
+            if($setupLogMaxSize.MaxSize -lt 32768){
+                writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommandation (32768KB) - this is a finding"
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is equal or larger then (32768KB) - this is good"
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Setup log is not enabled"
+        }
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > Setup maximum log file is not configured or enabled"
+    }
+
+}
+
 ###Genral Vals
 # get hostname to use as the folder name and file names
 $hostname = hostname
@@ -1613,13 +1720,16 @@ checkNTLMv2 -name "Domain-Hardning"
 # GPO reprocess check
 checkGPOReprocess -name "Domain-Hardning"
 
-# Powershell Audit settings check
+# Commandline Audit settings check
 checkCommandLineAudit -name "Audit-Policy"
 
 # Powershell Audit settings check
 checkPowrshellAudit -name "Audit-Policy"
 
-# Powershell Audit settings check
+#check log size
+checkLogSize -name "Audit-Policy"
+
+# Audit policy settings check
 dataAuditPolicy -name "Audit-Policy"
 
 # Check always install elevated setting
