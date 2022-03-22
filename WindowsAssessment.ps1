@@ -27,7 +27,6 @@ $Version = "1.21" # used for logging purposes
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings
-- Check if safe mode access by non-admins is blocked (based on SafeModeBlockNonAdmins reg value) - in work
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Enhance internet connectivity checks (add traceroute, curl to websites over http/s, use proxy configuration, test TCP on few sample ports towards portquiz)
