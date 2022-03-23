@@ -724,17 +724,27 @@ function checkSMBHardening {
 }
 
 # Getting RDP security settings
-function dataRDPSecuirty {
+function checkRDPSecuirty {
     param (
         $name
     )
-    writeToLog -str "running dataRDPSecuirty function"
+    writeToLog -str "running checkRDPSecuirty function"
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting RDP security settings..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Settings (from WMI) ============="
+    
     $WMIFilter = "TerminalName='RDP-tcp'" # there might be issues with the quotation marks - to debug
     $RDP = Get-WmiObject -class Win32_TSGeneralSetting -Namespace root\cimv2\terminalservices -Filter $WMIFilter
-    writeToFile -file $outputFile -path $folderLocation -str ($RDP | Format-List Terminal*,*Encrypt*, Policy*,Security*,SSL*,*Auth* | Out-String )
+    writeToFile -file $outputFile -path $folderLocation -str "============= RDP service status ============="
+    $reg = Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -ErrorAction SilentlyContinue
+    if($null -ne $reg -and $reg.fDenyTSConnections -eq 1)
+    {
+        writeToFile -file $outputFile -path $folderLocation -str " > RDP Is disabled on this machine."
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > RDP Is enabled on this machine."
+    }
+    if ($RDP.UserAuthenticationRequired -eq 1)
+        {writeToFile -file $outputFile -path $folderLocation -str "NLA is required, which is fine."}
     writeToFile -file $outputFile -path $folderLocation -str "============= NLA (Network Level Authentication) ============="
     if ($RDP.UserAuthenticationRequired -eq 1)
         {writeToFile -file $outputFile -path $folderLocation -str "NLA is required, which is fine."}
@@ -762,6 +772,8 @@ function dataRDPSecuirty {
         writeToFile -file $outputFile -path $folderLocation -str "60000 = 1 minute, 3600000 = 1 hour, etc."
         writeToFile -file $outputFile -path $folderLocation -str "`r`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits"
     } 
+    writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Settings (from WMI) ============="
+    writeToFile -file $outputFile -path $folderLocation -str ($RDP | Format-List Terminal*,*Encrypt*, Policy*,Security*,SSL*,*Auth* | Out-String )
 }
 
 # getting credential guard settings (for Windows 10/2016 and above only)
@@ -1909,7 +1921,7 @@ dataLocalUsers -name "Local-Users"
 checkSMBHardening -name "SMB"
 
 # Getting RDP security settings
-dataRDPSecuirty -name "RDP"
+checkRDPSecuirty -name "RDP"
 
 # getting credential guard settings (for Windows 10/2016 and above only)
 dataCredentialGuard -name "Credential-Guard"
