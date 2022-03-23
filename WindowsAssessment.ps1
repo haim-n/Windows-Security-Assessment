@@ -8,7 +8,7 @@ $Version = "1.21" # used for logging purposes
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
 - Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check for bugs in the SMB1 check - fixed need to check
-- Log errors to a log file using Start/Stop-Transcript
+- Log errors to a log file using Start/Stop-Transcript - PSv5 only 
 - Debug the FirewallProducts check
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP (reg key)
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
@@ -80,6 +80,7 @@ Controls Checklist:
 - Host firewall rules are configured to block inbound (Windows-Firewall and Windows-Firewall-Rules files)
 - GPO Enforce reprocess check (Domain-Hardening file)
 - Always install with elevated privileges setting (Domain-Hardening file)
+- Check if external DNS servers (8.8.8.8, etc.) are accessible (Internet-Connectivity file)
 ##########################################################
 @Haim Nachmias @Nital Ruzin
 ##########################################################>
@@ -256,9 +257,13 @@ function checkInternetAccess{
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str " powershell is lower then version 4 other checks are not supported "
+        writeToLog -str "Function checkInternetAccess: Powershell executing the script does not support curl command skipping network connection test"
     }
+    <#
+    # very long test skipping it for now 
     writeToFile -file $outputFile -path $folderLocation -str "============= tracert -d -w 100 8.8.8.8 =============" 
-    writeToFile -file $outputFile -path $folderLocation -str (tracert -d -w 100 8.8.8.8)
+    writeToFile -file $outputFile -path $folderLocation -str (tracert -d -h 10 -w 50 8.8.8.8)
+    #>
 
 }
 
@@ -1684,9 +1689,133 @@ function checkSafeModeAcc4NonAdmin {
     }
 }
 
+#check proxy settings (including WPAD)
+function checkProxyConfiguration {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extension ".txt"
+    writeToLog -str "running checkProxyConfiguration function"
+    writeToScreen -str "Checking proxy configuration" -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Proxy Configuration ============="
+    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "ProxySettingsPerUser" -ErrorAction SilentlyContinue
+    if($null -ne $reg -and $reg.ProxySettingsPerUser -eq 0){
+        writeToFile -file $outputFile -path $folderLocation -str " > Proxy is configured on the machine (enforced on all users forced by GPO)"
+    }
+    if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)){
+        $reg = Get-ItemProperty -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\NetworkIsolation" -Name "DProxiesAuthoritive" -ErrorAction SilentlyContinue
+        if($null -ne $reg -and $reg.DProxiesAuthoritive -eq 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > Windows Network Isolation's automatic proxy discovery is disabled "
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Windows Network Isolation's automatic proxy discovery is enabled! "
+        }
+    }
+    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Internet Explorer\Control Panel" -Name "Proxy" -ErrorAction SilentlyContinue 
+    $reg2 = Get-ItemProperty -Path "HKCU\Software\Policies\Microsoft\Internet Explorer\Control Panel" -Name "Proxy" -ErrorAction SilentlyContinue
+    if($null -ne $reg -and $reg.Proxy -eq 1){
+        writeToFile -file $outputFile -path $folderLocation -str " > User cannot change proxy setting - prevention is on the computer level (only in windows other application not always use the system setting)"
+    }
+    elseif($null -ne $reg2 -and $reg2.Proxy -eq 1){
+        writeToFile -file $outputFile -path $folderLocation -str " > User cannot change proxy setting - prevention is on the user level (only in windows other application not always use the system setting)"
+    }
+    else {
+        writeToFile -file $outputFile -path $folderLocation -str " > User can change proxy setting (only in windows other application not always use the system setting)"
+    }
+
+    $reg = Get-ItemProperty -Path "Software\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "EnableAutoProxyResultCache" -ErrorAction SilentlyContinue
+    if($null -ne $reg -and $reg.EnableAutoProxyResultCache -eq 0){
+        writeToFile -file $outputFile -path $folderLocation -str " > Caching of Auto-Proxy scripts is Disable (WPAD Disabled)" # need to check
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > Caching of Auto-Proxy scripts is enabled (WPAD enabled)" # need to check
+    }
+
+
+    
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n=== netsh winhttp show proxy - output ==="
+    writeToFile -file $outputFile -path $folderLocation -str (netsh winhttp show proxy)
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n=== User proxy setting ==="
+    #checking internet settings (IE and system use the same configuration)
+    $userProxy = Get-ItemProperty -Path "Registry::HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue
+    $reg = Get-ItemProperty -Path "Registry::HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "ProxyEnable" -ErrorAction SilentlyContinue 
+    if($null -ne $reg -and $reg.ProxyEnable -eq 1){
+        writeToFile -file $outputFile -path $folderLocation -str ($userProxy | Out-String)
+    }
+    else {
+        writeToFile -file $outputFile -path $folderLocation -str " > User proxy is disabled"
+    }
+    <# Browser specific tests need to work on it
+    #checking if chrome is installed
+    $chromeComp = $null -ne (Get-ItemProperty HKLM:\Software\Google\Chrome)
+    $chromeUser = $null -ne (Get-ItemProperty HKCU:\Software\Google\Chrome)
+    if($chromeComp -or $chromeUser){
+        writeToFile -file $outputFile -path $folderLocation -str "`r`n=== Chrome proxy setting ==="
+        if($null -ne $chromeComp){
+            $prefix = "HKLM:\"
+        }
+        else{
+            $prefix = "HKCU:\"
+        }
+        $chromeReg = Get-ItemProperty ($prefix+"Software\Policies\Google\Chrome") -Name "ProxySettings" -ErrorAction SilentlyContinue 
+        if($null -ne $chromeReg)
+        {writeToFile -file $outputFile -path $folderLocation -str ($chromeReg.ProxySettings | Out-String)}
+
+    }
+    #checking if Firefox is installed
+    $firefoxComp = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -like "*FireFox*" })
+    $firefoxUser = $null -ne (Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -like "*FireFox*" })
+    if($firefoxComp -or $firefoxUser){
+        #checking Firefox proxy setting
+        writeToFile -file $outputFile -path $folderLocation -str "`r`n=== Firefox proxy setting ==="
+        if($null -ne $firefoxComp){
+            $prefix = "HKLM:\"
+        }
+        else{
+            $prefix = "HKCU:\"
+        }
+        $firefoxReg =  Get-ItemProperty ($prefix+"Software\Policies\Mozilla\Firefox\Proxy") -Name "Locked" -ErrorAction SilentlyContinue 
+        if($null -ne $firefoxReg -and $firefoxReg.Locked -eq 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > Firefox proxy setting is locked"
+        }
+        $firefoxReg =  Get-ItemProperty ($prefix+"Software\Policies\Mozilla\Firefox\Proxy") -Name "Mode" -ErrorAction SilentlyContinue 
+        switch ($firefoxReg.Mode) {
+            "" {writeToFile -file $outputFile -path $folderLocation -str " > Firefox proxy: not using proxy"}
+            "system" {writeToFile -file $outputFile -path $folderLocation -str " > Firefox proxy: using system settings"}
+            "manual" {writeToFile -file $outputFile -path $folderLocation -str " > Firefox proxy: using manual configuration"}
+            "autoDetect" {writeToFile -file $outputFile -path $folderLocation -str " > Firefox proxy: Auto detect"}
+            "autoConfig" {writeToFile -file $outputFile -path $folderLocation -str " > Firefox proxy: Auto config"}
+            Default {writeToFile -file $outputFile -path $folderLocation -str " > Firefox proxy: unknown probably no proxy"}
+        }
+        $firefoxReg =  Get-ItemProperty ($prefix+"Software\Policies\Mozilla\Firefox\Proxy") -Name "HTTPProxy" -ErrorAction SilentlyContinue 
+        if($null -ne $firefoxReg){
+            writeToFile -file $outputFile -path $folderLocation -str (" > Firefox proxy server:"+$firefoxReg.HTTPProxy)
+        }
+        $firefoxReg =  Get-ItemProperty ($prefix+"Software\Policies\Mozilla\Firefox\Proxy") -Name "UseHTTPProxyForAllProtocols" -ErrorAction SilentlyContinue 
+        if($null -ne $firefoxReg -and $firefoxReg.UseHTTPProxyForAllProtocols -eq 1){
+            writeToFile -file $outputFile -path $folderLocation -str (" > Firefox proxy: using http proxy for all protocols")
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str (" > Firefox proxy: not using http proxy for all protocols - check manual")
+        }
+    }
+    #>  
+}
+
 ###General val's
 # get hostname to use as the folder name and file names
 $hostname = hostname
+<#
+renaming folder idea:
+$test = (Get-WMIObject win32_operatingsystem).name
+$test = $test.Replace(" ","")
+$test = $test.Trim("Microsoft")
+$test = $test.Replace("Windows","Win")
+$test = $test.Substring(0,$test.IndexOf("|"))
+Output in windows 10:
+Win10Enterprise
+need to check on multiple machines
+#>
 $folderLocation = $hostname
 # get the windows version for later use
 $winVersion = [System.Environment]::OSVersion.Version
@@ -1739,6 +1868,9 @@ dataIpSettings -name "ipconfig"
 
 # test for internet connectivity
 checkInternetAccess -name "Internet-Connectivity"
+
+# test proxy settings
+checkProxyConfiguration -name "Internet-Connectivity"
 
 # get network connections (run-as admin is required for -b associated application switch)
 getNetCon -name "Netstat"
