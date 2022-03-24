@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.22" # used for logging purposes
+$Version = "1.23" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -508,7 +508,7 @@ function dataSharedFolders{
     writeToScreen -str "Getting shared folders..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= Shared Folders ============="
     $shares = Get-WmiObject -Class Win32_Share
-    writeToFile -file $outputFile -path $folderLocation -str $shares
+    writeToFile -file $outputFile -path $folderLocation -str ($shares | Out-String )
     # get shared folders + share permissions + NTFS permissions with SmbShare module (exists only in Windows 8 or 2012 and above)
     foreach ($share in $shares)
     {
