@@ -1,16 +1,14 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.21" # used for logging purposes
+$Version = "1.22" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
 - Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check for bugs in the SMB1 check - fixed need to check
-- Log errors to a log file using Start/Stop-Transcript - PSv5 only 
 - Debug the FirewallProducts check
-- Check for Windows Update / WSUS settings, check for WSUS over HTTP (reg key)
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Debug the RDP check on multiple OS versions
 - Integrate more checks from https://adsecurity.org/?p=3299
@@ -21,7 +19,6 @@ $Version = "1.21" # used for logging purposes
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
-- Add WPAD check
 - Test on Windows 2008
 - Check AV/Defender configuration also on non-Windows 10
 - Move lists to CSV format instead of TXT
@@ -81,6 +78,9 @@ Controls Checklist:
 - GPO Enforce reprocess check (Domain-Hardening file)
 - Always install with elevated privileges setting (Domain-Hardening file)
 - Check if external DNS servers (8.8.8.8, etc.) are accessible (Internet-Connectivity file)
+- Log errors to a log file using Start/Stop-Transcript (ScriptTranscript file)
+- Check for Windows Update / WSUS settings, check for WSUS over HTTP (Domain hardening file)
+- WPAD and proxy configuration check (Internet-Connectivity file)
 ##########################################################
 @Haim Nachmias @Nital Ruzin
 ##########################################################>
@@ -2091,6 +2091,7 @@ checkInstallElevated -name "Domain-Hardening"
 #Check if safe mode access by non-admins is blocked
 checkSafeModeAcc4NonAdmin -name "Domain-Hardening"
 
+#Check Windows update configuration
 checkWinUpdateConfig -name "Domain-Hardening"
 
 # get various system info (can take a few seconds)
