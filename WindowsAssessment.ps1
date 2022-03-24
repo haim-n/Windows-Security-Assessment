@@ -144,7 +144,7 @@ function dataWhoAmI {
     # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
     #$PrevErrorActionPreference = $ErrorActionPreference
     #$ErrorActionPreference = "SilentlyContinue"
-    if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2){
+    if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2 -and (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain){
         $tmp = Test-ComputerSecureChannel -ErrorAction SilentlyContinue
     }
     else{
@@ -1010,14 +1010,16 @@ function checkAntiVirusStatus {
         $MpPreference = Get-MpPreference
         writeToFile -file $outputFile -path $folderLocation -str ($MpPreference | Out-String)
         writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
-        $MpComputerStatus = Get-MpComputerStatus
-        writeToFile -file $outputFile -path $folderLocation -str "Enabled Defender features:" 
-        writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Format-List *enabled* | Out-String)
-        writeToFile -file $outputFile -path $folderLocation -str "Defender Tamper Protection:"
-        writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Format-List *tamper* | Out-String)
-        writeToFile -file $outputFile -path $folderLocation -str "Raw output of Get-MpComputerStatus:"
-        writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Out-String)
-        writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
+        $MpComputerStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue
+        if($null -ne $MpComputerStatus){
+            writeToFile -file $outputFile -path $folderLocation -str "Enabled Defender features:" 
+            writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Format-List *enabled* | Out-String)
+            writeToFile -file $outputFile -path $folderLocation -str "Defender Tamper Protection:"
+            writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Format-List *tamper* | Out-String)
+            writeToFile -file $outputFile -path $folderLocation -str "Raw output of Get-MpComputerStatus:"
+            writeToFile -file $outputFile -path $folderLocation -str ($MpComputerStatus | Out-String)
+            writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
+        }
         writeToFile -file $outputFile -path $folderLocation -str "Attack Surface Reduction Rules Ids:"
         writeToFile -file $outputFile -path $folderLocation -str ($MpPreference.AttackSurfaceReductionRules_Ids | Out-String)
         writeToFile -file $outputFile -path $folderLocation -str "Attack Surface Reduction Rules Actions:"
