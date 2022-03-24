@@ -144,8 +144,10 @@ function dataWhoAmI {
     # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
     #$PrevErrorActionPreference = $ErrorActionPreference
     #$ErrorActionPreference = "SilentlyContinue"
-    $tmp = Test-ComputerSecureChannel -ErrorAction SilentlyContinue
-    if($null -eq $tmp ){
+    if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2){
+        $tmp = Test-ComputerSecureChannel -ErrorAction SilentlyContinue
+    }
+    else{
         $tmp = $true
     }
     if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!$tmp))
@@ -199,7 +201,12 @@ function checkInternetAccess{
     if($psVer -ge 4){
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net =============" 
         $test = $null
-        $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net" -ErrorAction SilentlyContinue
+        try{
+            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 3 -Uri "http://portquiz.net" -ErrorAction SilentlyContinue
+        }
+        catch{
+            $test = $null
+        }
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > port 80 is open " 
@@ -215,7 +222,13 @@ function checkInternetAccess{
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:443 =============" 
         $test = $null
-        $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:443" -ErrorAction SilentlyContinue
+        try{
+            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 3 -Uri "http://portquiz.net:443" -ErrorAction SilentlyContinue
+        }
+        catch{
+            $test = $null
+        }
+        
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > port 443 is open " 
@@ -231,7 +244,12 @@ function checkInternetAccess{
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:666 =============" 
         $test = $null
-        $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:666" -ErrorAction SilentlyContinue
+        try{
+            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 3 -Uri "http://portquiz.net:666" -ErrorAction SilentlyContinue
+        }
+        catch{
+            $test = $null
+        }
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > port 666 is open " 
@@ -247,7 +265,13 @@ function checkInternetAccess{
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:8080 =============" 
         $test = $null
-        $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:8080" -ErrorAction SilentlyContinue
+        try{
+            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 3 -Uri "http://portquiz.net:8080" -ErrorAction SilentlyContinue
+        }
+        catch{
+            $test = $null
+        }
+        
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > port 8080 is open " 
@@ -421,7 +445,7 @@ function dataInstalledHotfixes {
     writeToFile -file $outputFile -path $folderLocation -str "https://en.wikipedia.org/wiki/Windows_10_version_history" 
     writeToFile -file $outputFile -path $folderLocation -str "https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" 
     writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-HotFix`" PowerShell command, sorted by installation date:`r`n" 
-    writeToFile -file $outputFile -path $folderLocation -str (Get-HotFix | Sort-Object InstalledOn -Descending -ErrorAction SilentlyContinue )
+    writeToFile -file $outputFile -path $folderLocation -str (Get-HotFix | Sort-Object InstalledOn -Descending -ErrorAction SilentlyContinue | Out-String )
     <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
     if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
     {
