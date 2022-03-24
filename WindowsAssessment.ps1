@@ -144,7 +144,11 @@ function dataWhoAmI {
     # when running whoami /all and not connected to the domain, claims information cannot be fetched and an error occurs. Temporarily silencing errors to avoid this.
     #$PrevErrorActionPreference = $ErrorActionPreference
     #$ErrorActionPreference = "SilentlyContinue"
-    if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!(Test-ComputerSecureChannel)))
+    $tmp = Test-ComputerSecureChannel -ErrorAction SilentlyContinue
+    if($null -eq $tmp ){
+        $tmp = $true
+    }
+    if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!$tmp))
         {
             writeToFile -file $outputFile -path $folderLocation -str (whoami /user /groups /priv)
         }
@@ -185,11 +189,13 @@ function checkInternetAccess{
     $test = Resolve-DnsName -Name google.com -Server 8.8.8.8 -QuickTimeout -NoRecursion -NoIdn -ErrorAction SilentlyContinue
     if($null -ne $test){
         writeToFile -file $outputFile -path $folderLocation -str " > DNS request was successful "
+
+        writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
+        writeToFile -file $outputFile -path $folderLocation -str ($test | Out-String)
     }
     else{
-        riteToFile -file $outputFile -path $folderLocation -str " > DNS request received a timeout "
+        writeToFile -file $outputFile -path $folderLocation -str " > DNS request received a timeout "
     }
-    writeToFile -file $outputFile -path $folderLocation -str (ping -n 2 8.8.8.8)
     if($psVer -ge 4){
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net =============" 
         $test = $null
@@ -743,8 +749,30 @@ function checkRDPSecuirty {
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > RDP Is enabled on this machine."
     }
-    if ($RDP.UserAuthenticationRequired -eq 1)
-        {writeToFile -file $outputFile -path $folderLocation -str "NLA is required, which is fine."}
+    writeToFile -file $outputFile -path $folderLocation -str "============= Remote Desktop Users ============="
+    $test = NET LOCALGROUP "Remote Desktop Users"
+    $test = $test.split("`n")
+    $flag = $false
+    foreach($line in $test){
+        if($line -eq "The command completed successfully."){
+            $flag = $false
+        }
+        if($flag){
+            if($line -like "Everyone" -or $line -like "*\Domain Users" -or $line -like "*authenticated users*" -or $line -eq "Guest"){
+                writeToFile -file $outputFile -path $folderLocation -str " > $line - This is a finding"
+            }
+            elseif($line -eq "Administrator"){
+                writeToFile -file $outputFile -path $folderLocation -str " > $line - local admin can logging throw remote desktop this is a finding"
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > $line"
+            }
+        }
+        if($line -like "---*---")
+        {
+            $flag = $true
+        }
+    }
     writeToFile -file $outputFile -path $folderLocation -str "============= NLA (Network Level Authentication) ============="
     if ($RDP.UserAuthenticationRequired -eq 1)
         {writeToFile -file $outputFile -path $folderLocation -str "NLA is required, which is fine."}
@@ -1814,6 +1842,90 @@ function checkProxyConfiguration {
     #>  
 }
 
+function checkWinUpdateConfig{
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extension ".txt"
+    writeToLog -str "running checkWSUSConfig function"
+    writeToScreen -str "Checking WSUS configuration" -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Windows update configuration ============="
+    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoUpdate" -ErrorAction SilentlyContinue
+    if($null -ne $reg -and $reg.NoAutoUpdate -eq 0){
+        writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is disabled - might be a finding"
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is enabled"
+    }
+    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUOptions" -ErrorAction SilentlyContinue
+    switch ($reg.AUOptions) {
+        2 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to notify for download and notify for install - this is bad (allows users to not update) " }
+        3 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to auto download and notify for install - this depends if this setting if this is set on servers and there is a manual process to update every month it is ok otherwise it is not recommended  " }
+        4 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to auto download and schedule the install - this is a good thing " 
+            $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ScheduledInstallDay" -ErrorAction SilentlyContinue
+            if($null -ne $reg){
+                switch ($reg.ScheduledInstallDay) {
+                    0 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every day "  }
+                    1 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Sunday  "  }
+                    2 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Monday  "  }
+                    3 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Tuesday  "  }
+                    4 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Wednesday  "  }
+                    5 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Thursday "  }
+                    6 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Friday  "  }
+                    7 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Saturday  "  }
+                    Default { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update day is not configured" }
+                }
+            }
+            $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ScheduledInstallTime" -ErrorAction SilentlyContinue
+            if($null -ne $reg){
+                writeToFile -file $outputFile -path $folderLocation -str  (" > Windows Automatic update to update at " + $reg.ScheduledInstallTime + ":00")
+            }
+
+          }
+        5 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to allow local admin to choose setting " }
+        Default {writeToFile -file $outputFile -path $folderLocation -str " > unknown windows update configuration"}
+    }
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Wsus configuration ============="
+    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "UseWUServer" -ErrorAction SilentlyContinue
+    if($null -ne $reg -and $reg.UseWUServer -eq 1 ){
+        $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate" -Name "WUServer" -ErrorAction SilentlyContinue
+        if($null -eq $reg){
+            writeToFile -file $outputFile -path $folderLocation -str " > wsus configuration found but no server has been configured"
+        }
+        else{
+            $test = $reg.WUServer
+            if($test -like "http://*"){
+                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configuration with http connection - this is bad"
+                $test = $test.Substring(7)
+                if($test.IndexOf("/") -ge 0){
+                    $test = $test.Substring(0,$test.IndexOf("/"))
+                }
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configuration with https connection - this is good"
+                $test = $test.Substring(8)
+                if($test.IndexOf("/") -ge 0){
+                    $test = $test.Substring(0,$test.IndexOf("/"))
+                }
+            }
+            try{
+                [IPAddress]$test | Out-Null
+                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configuration with an ip address - this might be a bad practice (using NTLM Authentication)"
+            }
+            catch{
+                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configuration with an ip address - this might be a bad practice (using NTLM Authentication)"
+            }
+            writeToFile -file $outputFile -path $folderLocation -str (" > WSUS Server is:"+ $reg.WUServer)
+        }
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > no wsus configuration found"
+    }
+
+
+
+}
+
 ###General val's
 # get hostname to use as the folder name and file names
 $hostname = hostname
@@ -1829,6 +1941,8 @@ Win10Enterprise
 need to check on multiple machines
 #>
 $folderLocation = $hostname
+$transcriptFile = getNameForFile -name "ScriptTranscript" -extension ".txt"
+Start-Transcript -Path ($folderLocation + "\" + $transcriptFile) -Append -ErrorAction SilentlyContinue
 # get the windows version for later use
 $winVersion = [System.Environment]::OSVersion.Version
 # powershell version 
@@ -1977,6 +2091,8 @@ checkInstallElevated -name "Domain-Hardening"
 #Check if safe mode access by non-admins is blocked
 checkSafeModeAcc4NonAdmin -name "Domain-Hardening"
 
+checkWinUpdateConfig -name "Domain-Hardening"
+
 # get various system info (can take a few seconds)
 dataSystemInfo -name "Systeminfo"
 
@@ -1985,6 +2101,7 @@ dataSystemInfo -name "Systeminfo"
 $currTime = Get-Date
 writeToLog -str ("Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss"))
 writeToLog -str ("Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds")  
+Stop-Transcript
 
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
 if($psVer -ge 5){
