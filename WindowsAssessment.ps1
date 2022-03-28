@@ -26,7 +26,7 @@ $Version = "1.23" # used for logging purposes
 - Check Macro and DDE (OLE) settings
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
-- Enhance internet connectivity checks (use proxy configuration) -need to check proxy 
+- Enhance internet connectivity checks (use proxy configuration) - enhanced support for win10\Srv2016 -need to check proxy 
 - Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
 - Check for Device Control (GPO or dedicated software)
 - Check ability to connect to Wi-Fi while connected to wired (Interface settings \ Disable Upon Wired Connect)
@@ -1691,11 +1691,11 @@ function checkLogSize {
         }
         $size = $Calc.tostring() + $size
         writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file is $size"
-        if($securityLogMaxSize.MaxSize -lt 196604){
-            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is smaller then the recommendation (196604KB ) - this is a finding"
+        if($securityLogMaxSize.MaxSize -lt 196608){
+            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is smaller then the recommendation (196608KB ) - this is a finding"
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is equal or larger then (32768KB) - this is good"
+            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is equal or larger then (196608KB) - this is good"
         }
     }
     else{
@@ -1796,9 +1796,27 @@ function checkProxyConfiguration {
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > Caching of Auto-Proxy scripts is enabled (WPAD enabled)" # need to check
     }
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n=== WinHTTP service (Auto Proxy) ==="
+    $proxySrv = Get-Service -Name "WinHttpAutoProxySvc" -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
+    if($null -ne $proxySrv)
+    {
+        if($proxySrv.Status -eq "Running" )
+        {writeToFile -file $outputFile -path $folderLocation -str " > WPAD service status is running - WinHTTP Web Proxy Auto-Discovery Service"}
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str (" > WPAD service status is "+$proxySrv.Status+" - WinHTTP Web Proxy Auto-Discovery Service")
+        }
+        if($proxySrv.StartType -eq "Disable"){
+            writeToFile -file $outputFile -path $folderLocation -str " > WPAD service start type is disabled - WinHTTP Web Proxy Auto-Discovery Service"
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str (" > WPAD service start type is "+$proxySrv.StartType+ " - WinHTTP Web Proxy Auto-Discovery Service")
+        }
+        writeToFile -file $outputFile -path $folderLocation -str "`r`n=== Raw data:"
+        writeToFile -file $outputFile -path $folderLocation -str ($proxySrv | Format-Table -Property Name, DisplayName,Status,StartType,ServiceType| Out-String)
+    }
 
 
-    
+
     writeToFile -file $outputFile -path $folderLocation -str "`r`n=== netsh winhttp show proxy - output ==="
     writeToFile -file $outputFile -path $folderLocation -str (netsh winhttp show proxy)
     writeToFile -file $outputFile -path $folderLocation -str "`r`n=== User proxy setting ==="
@@ -1811,6 +1829,7 @@ function checkProxyConfiguration {
     else {
         writeToFile -file $outputFile -path $folderLocation -str " > User proxy is disabled"
     }
+
     <# Browser specific tests need to work on it
     #checking if chrome is installed
     $chromeComp = $null -ne (Get-ItemProperty HKLM:\Software\Google\Chrome)
