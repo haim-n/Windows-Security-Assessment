@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.23" # used for logging purposes
+$Version = "1.25" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -26,7 +26,7 @@ $Version = "1.23" # used for logging purposes
 - Check Macro and DDE (OLE) settings
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
-- Enhance internet connectivity checks (use proxy configuration) - enhanced support for win10\Srv2016 -need to check proxy 
+- Enhance internet connectivity checks (use proxy configuration) - need to check proxy settings on multiple types of deployments 
 - Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
 - Check for Device Control (GPO or dedicated software)
 - Check ability to connect to Wi-Fi while connected to wired (Interface settings \ Disable Upon Wired Connect)
@@ -81,6 +81,7 @@ Controls Checklist:
 - Log errors to a log file using Start/Stop-Transcript (ScriptTranscript file)
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP (Domain hardening file)
 - WPAD and proxy configuration check (Internet-Connectivity file)
+- Unquoted service path attack check  (Services file)
 ##########################################################
 @Haim Nachmias @Nital Ruzin
 ##########################################################>
@@ -1777,6 +1778,7 @@ function checkProxyConfiguration {
             writeToFile -file $outputFile -path $folderLocation -str " > Windows Network Isolation's automatic proxy discovery is enabled! "
         }
     }
+    writeToFile -file $outputFile -path $folderLocation -str "=== Internet Explorer Settings (System-default) ==="
     $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Internet Explorer\Control Panel" -Name "Proxy" -ErrorAction SilentlyContinue 
     $reg2 = Get-ItemProperty -Path "HKCU\Software\Policies\Microsoft\Internet Explorer\Control Panel" -Name "Proxy" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.Proxy -eq 1){
@@ -1887,6 +1889,7 @@ function checkProxyConfiguration {
     #>  
 }
 
+#check windows update configuration + WSUS
 function checkWinUpdateConfig{
     param (
         $name
@@ -1969,6 +1972,38 @@ function checkWinUpdateConfig{
 
 
 
+}
+
+#check for unquoted path vulnerability in services running on the machine
+function checkUnquotedSePath {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extension ".txt"
+    writeToLog -str "running checkUnquotedSePath function"
+    writeToScreen -str "Checking if the system has a service vulnerable to Unquoted path escalation attack" -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Unquoted path vulnerability ============="
+    writeToFile -file $outputFile -path $folderLocation -str "This test is checking all services on the computer if there is a service that is not running from a quoted path and starts outside of the protected folder (i.e. Windows folder)"
+    writeToFile -file $outputFile -path $folderLocation -str "for more information about the attack: https://attack.mitre.org/techniques/T1574/009/ "
+    $services = Get-WmiObject win32_service | Select-Object Name, DisplayName, PathName
+    $badPaths = @()
+    $boolBadPath = $false
+    foreach($service in $services){
+        $test = $service.PathName
+        if($null -ne $test){
+            if($test -notlike "`"*" -and $test -notlike "C:\Windows\*"){
+                $badPaths += $service
+                $boolBadPath = $true
+            }
+        }
+    }
+    if($boolBadPath){
+        writeToFile -file $outputFile -path $folderLocation -str " > There are vulnerable services in this machine:"
+        writeToFile -file $outputFile -path $folderLocation -str  ($badPaths | Out-String)
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > the check did not find any service that is vulnerable to Unquoted path escalation attack"
+    }
 }
 
 ###General val's
@@ -2060,6 +2095,9 @@ dataInstalledHotfixes -name "Hotfixes"
 
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
 dataRunningProcess -name "Process-list"
+
+#check for unquoted path vulnerability in services running on the machine
+checkUnquotedSePath -name "Services"
 
 # get services
 dataServices -name "Services"
