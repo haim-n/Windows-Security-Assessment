@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.25" # used for logging purposes
+$Version = "1.26" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
@@ -29,8 +29,6 @@ $Version = "1.25" # used for logging purposes
 - Enhance internet connectivity checks (use proxy configuration) - need to check proxy settings on multiple types of deployments 
 - Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
 - Check for Device Control (GPO or dedicated software)
-- Check ability to connect to Wi-Fi while connected to wired (Interface settings \ Disable Upon Wired Connect)
-- Find misconfigured services which allow elevation of privileges
 - Add More settings from hardening docs
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 
@@ -82,6 +80,8 @@ Controls Checklist:
 - Check for Windows Update / WSUS settings, check for WSUS over HTTP (Domain hardening file)
 - WPAD and proxy configuration check (Internet-Connectivity file)
 - Unquoted service path attack check  (Services file)
+- Check ability to connect to Wi-Fi while connected to wired (Domain-Hardening file)
+
 ##########################################################
 @Haim Nachmias @Nital Ruzin
 ##########################################################>
@@ -2006,6 +2006,53 @@ function checkUnquotedSePath {
     }
 }
 
+#check if there is hardening preventing user from connecting to multiple networks simultaneous 
+function checkSimulEhtrAndWifi {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extension ".txt"
+    writeToLog -str "running checkSimulEhtrAndWifi function"
+    writeToScreen -str "Checking if simultaneous connection to Ethernet and wifi is possible " -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= check simultaneous Ethernet and WIFI is possible ============="
+    if ($psVer -ge 4 -and (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))) {
+        writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured"
+        $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WcmSvc\GroupPolicy" -Name "fMinimizeConnections" -ErrorAction SilentlyContinue
+        if($null -ne $reg){
+            switch ($reg.fMinimizeConnections) {
+                0 { writeToFile -file $outputFile -path $folderLocation -str " > Machine is not hardened and allow simultaneous connections" }
+                1 { writeToFile -file $outputFile -path $folderLocation -str " > Any new automatic internet connection is blocked when the computer has at least one active internet connection to a preferred type of network." }
+                2 { writeToFile -file $outputFile -path $folderLocation -str " > Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured to stay connected to cellular" }
+                3 { writeToFile -file $outputFile -path $folderLocation -str " > Machine is hardened and disallow Wi-Fi when connected to Ethernet " }
+                Default {writeToFile -file $outputFile -path $folderLocation -str " > Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured with unknown configuration"}
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Minimize the number of simultaneous connections to the Internet or a Windows Domain is not configured"
+
+        }
+
+        writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Prohibit connection to non-domain networks when connected to domain authenticated network is configured"
+        $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WcmSvc\GroupPolicy" -Name "fBlockNonDomain" -ErrorAction SilentlyContinue
+        if($null -ne $reg){
+            if($reg.fBlockNonDomain -eq 1){
+                writeToFile -file $outputFile -path $folderLocation -str " > Machine is hardened and Prohibit connection to non-domain networks when connected to domain authenticated network"
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Machine allows connection to non-domain networks when connected to domain authenticated network"
+            }
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > No configuration found to restrict machine connection to non-domain networks when connected to domain authenticated network"
+        }
+      
+    }
+    else{
+        writeToFile -file $outputFile -path $folderLocation -str " > OS is obsolete and those not support network access restriction based on GPO"
+    }
+    
+}
+
 ###General val's
 # get hostname to use as the folder name and file names
 $hostname = hostname
@@ -2171,14 +2218,17 @@ dataAuditPolicy -name "Audit-Policy"
 # Check always install elevated setting
 checkInstallElevated -name "Domain-Hardening"
 
-#Check if safe mode access by non-admins is blocked
+# Check if safe mode access by non-admins is blocked
 checkSafeModeAcc4NonAdmin -name "Domain-Hardening"
 
-#Check Windows update configuration
+# Check Windows update configuration
 checkWinUpdateConfig -name "Domain-Hardening"
 
 # get various system info (can take a few seconds)
 dataSystemInfo -name "Systeminfo"
+
+# Check if there is hardening preventing user from connecting to multiple networks simultaneous 
+checkSimulEhtrAndWifi -name "Domain-Hardening"
 
 #########################################################
 
