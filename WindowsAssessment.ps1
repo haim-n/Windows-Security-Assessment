@@ -20,7 +20,7 @@ $Version = "1.26" # used for logging purposes
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
 - Test on Windows 2008
-- Check AV/Defender configuration also on non-Windows 10
+- Check AV/Defender configuration also on non-Windows 10 - works for windows 11
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings
@@ -189,15 +189,28 @@ function checkInternetAccess{
     writeToFile -file $outputFile -path $folderLocation -str "============= ping -n 2 8.8.8.8 =============" 
     writeToFile -file $outputFile -path $folderLocation -str (ping -n 2 8.8.8.8)
     writeToFile -file $outputFile -path $folderLocation -str "============= DNS request for 8.8.8.8 =============" 
-    $test = Resolve-DnsName -Name google.com -Server 8.8.8.8 -QuickTimeout -NoRecursion -NoIdn -ErrorAction SilentlyContinue
-    if($null -ne $test){
-        writeToFile -file $outputFile -path $folderLocation -str " > DNS request was successful "
+    if($psVer -ge 4)
+    {
+        $test = Resolve-DnsName -Name google.com -Server 8.8.8.8 -QuickTimeout -NoRecursion -NoIdn -ErrorAction SilentlyContinue
+        if($null -ne $test){
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request was successful "
 
-        writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
-        writeToFile -file $outputFile -path $folderLocation -str ($test | Out-String)
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
+            writeToFile -file $outputFile -path $folderLocation -str ($test | Out-String)
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request received a timeout "
+        }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > DNS request received a timeout "
+        $result = nslookup google.com 8.8.8.8
+        if($result -like "*DNS request timed out*"){
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request received a timeout "
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
+            writeToFile -file $outputFile -path $folderLocation -str ($result | Out-String)
+        }
     }
     if($psVer -ge 4){
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net =============" 
@@ -776,7 +789,7 @@ function checkRDPSecuirty {
     }
     writeToFile -file $outputFile -path $folderLocation -str "============= Remote Desktop Users ============="
     $test = NET LOCALGROUP "Remote Desktop Users"
-    $test = $test.split("`n")
+    $test = $test -split("`n")
     $flag = $false
     foreach($line in $test){
         if($line -eq "The command completed successfully."){
@@ -2015,7 +2028,7 @@ function checkSimulEhtrAndWifi {
     writeToLog -str "running checkSimulEhtrAndWifi function"
     writeToScreen -str "Checking if simultaneous connection to Ethernet and wifi is possible " -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= check simultaneous Ethernet and WIFI is possible ============="
-    if ($psVer -ge 4 -and (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))) {
+    if ((($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))) {
         writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured"
         $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WcmSvc\GroupPolicy" -Name "fMinimizeConnections" -ErrorAction SilentlyContinue
         if($null -ne $reg){
@@ -2069,12 +2082,17 @@ need to check on multiple machines
 #>
 $folderLocation = $hostname
 $transcriptFile = getNameForFile -name "ScriptTranscript" -extension ".txt"
-Start-Transcript -Path ($folderLocation + "\" + $transcriptFile) -Append -ErrorAction SilentlyContinue
 # get the windows version for later use
 $winVersion = [System.Environment]::OSVersion.Version
 # powershell version 
 $psVer = Get-Host | Select-Object Version
 $psVer = $psVer.Version.Major
+if($psVer -ge 4){
+    Start-Transcript -Path ($folderLocation + "\" + $transcriptFile) -Append -ErrorAction SilentlyContinue
+}
+else{
+    writeToLog -str " Transcript creation is not passible running in powershell v2"
+}
 ### start of script ###
 $startTime = Get-Date
 writeToScreen -str "Hello dear user!" -ForegroundColor "Green"
@@ -2235,7 +2253,9 @@ checkSimulEhtrAndWifi -name "Domain-Hardening"
 $currTime = Get-Date
 writeToLog -str ("Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss"))
 writeToLog -str ("Total Running Time (before zipping): " + [int]($currTime - $startTime).TotalSeconds + " seconds")  
-Stop-Transcript
+if($psVer -ge 4){
+    Stop-Transcript
+}
 
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
 if($psVer -ge 5){
