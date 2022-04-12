@@ -20,7 +20,7 @@ $Version = "1.26" # used for logging purposes
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
 - Test on Windows 2008
-- Check AV/Defender configuration also on non-Windows 10 - works for windows 11
+- Check AV/Defender configuration also on non-Windows 10 - worked on windows 11
 - Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings
@@ -31,6 +31,7 @@ $Version = "1.26" # used for logging purposes
 - Check for Device Control (GPO or dedicated software)
 - Add More settings from hardening docs
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
+- add amsi test (find something that is not ECAR based) https://www.blackhillsinfosec.com/is-this-thing-on/
 
 ##########################################################
 Controls Checklist:
@@ -1206,7 +1207,7 @@ function checkNetSessionEnum {
     $SecurityDesc = New-Object -TypeName System.Security.AccessControl.CommonSecurityDescriptor -ArgumentList ($true,$false,$SessionRegValue,0)
     writeToFile -file $outputFile -path $folderLocation -str ($SecurityDesc.DiscretionaryAcl | ForEach-Object {$_ | Add-Member -MemberType ScriptProperty -Name TranslatedSID -Value ({$this.SecurityIdentifier.Translate([System.Security.Principal.NTAccount]).Value}) -PassThru} | Out-String)
     writeToFile -file $outputFile -path $folderLocation -str "--------- Raw Registry Value Check ---------" 
-    writeToFile -file $outputFile -path $folderLocation -str "For comparison, below are the beggining of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:"
+    writeToFile -file $outputFile -path $folderLocation -str "For comparison, below are the beginning of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:"
     writeToFile -file $outputFile -path $folderLocation -str "Default value for Windows 2019 and newer builds of Windows 10 (hardened): 1,0,4,128,160,0,0,0,172"
     writeToFile -file $outputFile -path $folderLocation -str "Default value for Windows 2016, older builds of Windows 10 and older OS versions (not secure - finding): 1,0,4,128,120,0,0,0,132"
     writeToFile -file $outputFile -path $folderLocation -str "Value after running NetCease (hardened): 1,0,4,128,20,0,0,0,32"
@@ -1755,7 +1756,7 @@ function checkSafeModeAcc4NonAdmin {
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Safe mode access by non-admins ============="
     writeToFile -file $outputFile -path $folderLocation -str "If safe mode can be accessed by non admins there is an option of privilege escalation on this machine for an attacker - required direct access"
 
-    $reg = Get-ItemProperty -Path "HKLM\SOFTWARE\Microsoft\Windows\Curr entVersion\Policies\System" -Name "SafeModeBlockNonAdmins" -ErrorAction SilentlyContinue # registry key that contains the safe mode restriction
+    $reg = Get-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\Curr entVersion\Policies\System" -Name "SafeModeBlockNonAdmins" -ErrorAction SilentlyContinue # registry key that contains the safe mode restriction
     if($null -eq $reg){
         writeToFile -file $outputFile -path $folderLocation -str " > No hardening on Safe mode access by non admins - might be a finding"
     }
@@ -1778,12 +1779,12 @@ function checkProxyConfiguration {
     writeToLog -str "running checkProxyConfiguration function"
     writeToScreen -str "Checking proxy configuration" -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Proxy Configuration ============="
-    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "ProxySettingsPerUser" -ErrorAction SilentlyContinue
+    $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "ProxySettingsPerUser" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.ProxySettingsPerUser -eq 0){
         writeToFile -file $outputFile -path $folderLocation -str " > Proxy is configured on the machine (enforced on all users forced by GPO)"
     }
     if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)){
-        $reg = Get-ItemProperty -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\NetworkIsolation" -Name "DProxiesAuthoritive" -ErrorAction SilentlyContinue
+        $reg = Get-ItemProperty -Path "HKLM:SOFTWARE\Policies\Microsoft\Windows\NetworkIsolation" -Name "DProxiesAuthoritive" -ErrorAction SilentlyContinue
         if($null -ne $reg -and $reg.DProxiesAuthoritive -eq 1){
             writeToFile -file $outputFile -path $folderLocation -str " > Windows Network Isolation's automatic proxy discovery is disabled "
         }
@@ -1792,8 +1793,8 @@ function checkProxyConfiguration {
         }
     }
     writeToFile -file $outputFile -path $folderLocation -str "=== Internet Explorer Settings (System-default) ==="
-    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Internet Explorer\Control Panel" -Name "Proxy" -ErrorAction SilentlyContinue 
-    $reg2 = Get-ItemProperty -Path "HKCU\Software\Policies\Microsoft\Internet Explorer\Control Panel" -Name "Proxy" -ErrorAction SilentlyContinue
+    $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Internet Explorer\Control Panel" -Name "Proxy" -ErrorAction SilentlyContinue 
+    $reg2 = Get-ItemProperty -Path "HKCU:Software\Policies\Microsoft\Internet Explorer\Control Panel" -Name "Proxy" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.Proxy -eq 1){
         writeToFile -file $outputFile -path $folderLocation -str " > User cannot change proxy setting - prevention is on the computer level (only in windows other application not always use the system setting)"
     }
@@ -1836,8 +1837,8 @@ function checkProxyConfiguration {
     writeToFile -file $outputFile -path $folderLocation -str (netsh winhttp show proxy)
     writeToFile -file $outputFile -path $folderLocation -str "`r`n=== User proxy setting ==="
     #checking internet settings (IE and system use the same configuration)
-    $userProxy = Get-ItemProperty -Path "Registry::HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue
-    $reg = Get-ItemProperty -Path "Registry::HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "ProxyEnable" -ErrorAction SilentlyContinue 
+    $userProxy = Get-ItemProperty -Path "Registry::HKCU:Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue
+    $reg = Get-ItemProperty -Path "Registry::HKCU:Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "ProxyEnable" -ErrorAction SilentlyContinue 
     if($null -ne $reg -and $reg.ProxyEnable -eq 1){
         writeToFile -file $outputFile -path $folderLocation -str ($userProxy | Out-String)
     }
@@ -1911,19 +1912,19 @@ function checkWinUpdateConfig{
     writeToLog -str "running checkWSUSConfig function"
     writeToScreen -str "Checking WSUS configuration" -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Windows update configuration ============="
-    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoUpdate" -ErrorAction SilentlyContinue
+    $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoUpdate" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.NoAutoUpdate -eq 0){
         writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is disabled - might be a finding"
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is enabled"
     }
-    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUOptions" -ErrorAction SilentlyContinue
+    $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUOptions" -ErrorAction SilentlyContinue
     switch ($reg.AUOptions) {
         2 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to notify for download and notify for install - this is bad (allows users to not update) " }
         3 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to auto download and notify for install - this depends if this setting if this is set on servers and there is a manual process to update every month it is ok otherwise it is not recommended  " }
         4 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to auto download and schedule the install - this is a good thing " 
-            $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ScheduledInstallDay" -ErrorAction SilentlyContinue
+            $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ScheduledInstallDay" -ErrorAction SilentlyContinue
             if($null -ne $reg){
                 switch ($reg.ScheduledInstallDay) {
                     0 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every day "  }
@@ -1937,7 +1938,7 @@ function checkWinUpdateConfig{
                     Default { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update day is not configured" }
                 }
             }
-            $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ScheduledInstallTime" -ErrorAction SilentlyContinue
+            $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ScheduledInstallTime" -ErrorAction SilentlyContinue
             if($null -ne $reg){
                 writeToFile -file $outputFile -path $folderLocation -str  (" > Windows Automatic update to update at " + $reg.ScheduledInstallTime + ":00")
             }
@@ -1947,9 +1948,9 @@ function checkWinUpdateConfig{
         Default {writeToFile -file $outputFile -path $folderLocation -str " > unknown windows update configuration"}
     }
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Wsus configuration ============="
-    $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "UseWUServer" -ErrorAction SilentlyContinue
+    $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "UseWUServer" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.UseWUServer -eq 1 ){
-        $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate" -Name "WUServer" -ErrorAction SilentlyContinue
+        $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate" -Name "WUServer" -ErrorAction SilentlyContinue
         if($null -eq $reg){
             writeToFile -file $outputFile -path $folderLocation -str " > wsus configuration found but no server has been configured"
         }
@@ -2030,7 +2031,7 @@ function checkSimulEhtrAndWifi {
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= check simultaneous Ethernet and WIFI is possible ============="
     if ((($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))) {
         writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured"
-        $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WcmSvc\GroupPolicy" -Name "fMinimizeConnections" -ErrorAction SilentlyContinue
+        $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WcmSvc\GroupPolicy" -Name "fMinimizeConnections" -ErrorAction SilentlyContinue
         if($null -ne $reg){
             switch ($reg.fMinimizeConnections) {
                 0 { writeToFile -file $outputFile -path $folderLocation -str " > Machine is not hardened and allow simultaneous connections" }
@@ -2046,7 +2047,7 @@ function checkSimulEhtrAndWifi {
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Prohibit connection to non-domain networks when connected to domain authenticated network is configured"
-        $reg = Get-ItemProperty -Path "HKLM\Software\Policies\Microsoft\Windows\WcmSvc\GroupPolicy" -Name "fBlockNonDomain" -ErrorAction SilentlyContinue
+        $reg = Get-ItemProperty -Path "HKLM:SOFTWARE\Policies\Microsoft\Windows\WcmSvc\GroupPolicy" -Name "fBlockNonDomain" -ErrorAction SilentlyContinue
         if($null -ne $reg){
             if($reg.fBlockNonDomain -eq 1){
                 writeToFile -file $outputFile -path $folderLocation -str " > Machine is hardened and Prohibit connection to non-domain networks when connected to domain authenticated network"
@@ -2064,6 +2065,117 @@ function checkSimulEhtrAndWifi {
         writeToFile -file $outputFile -path $folderLocation -str " > OS is obsolete and those not support network access restriction based on GPO"
     }
     
+}
+
+#Check Macro and DDE (OLE) settings
+function checkMacroAndDDE{
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extension ".txt"
+    writeToLog -str "running checkMacroAndDDE function"
+    writeToScreen -str "Checking Macros and DDE configuration" -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Macros and DDE configuration ============="
+    #Get-WmiObject win32_product | where{$_.Name -like "*Office *" -and $_.Vendor -like "*Microsoft*"} | select Name,Version
+    $versions = Get-WmiObject win32_product | Where-Object{$_.Name -like "*Office *" -and $_.Vendor -like "*Microsoft*"} | Select-Object Version
+    $versionCut = @()
+    foreach($ver in $versions.version){
+        $tmp = $ver.IndexOf(".")
+        $flag = $true
+        foreach($n in $versionCut ){
+            if($n -eq $ver.Substring(0,$tmp+2)){
+                $flag = $false
+            }
+        }
+        if($flag){
+            $versionCut += $ver.Substring(0,$tmp+2)
+        }
+    }
+    if($versionCut.Count -ge 1){
+        writeToFile -file $outputFile -path $folderLocation -str "`r`n=== DDE Configuration"
+        foreach($n in $versionCut){
+            writeToFile -file $outputFile -path $folderLocation -str "Office version $n"
+            #Excel
+            if($n -ge 12.0){
+                $reg = Get-ItemProperty -Path "HKCU:Software\Microsoft\Office\$n\Excel\Security" -Name "WorkbookLinkWarnings" -ErrorAction SilentlyContinue
+                if($null -ne $reg){
+                    if($reg.WorkbookLinkWarnings -eq 2){
+                        writeToFile -file $outputFile -path $folderLocation -str " > Excel WorkbookLinkWarnings (DDE) is disabled"
+                    }
+                    else{
+                        writeToFile -file $outputFile -path $folderLocation -str " > Excel WorkbookLinkWarnings (DDE) is Enabled "
+                    }
+                }
+                else{
+                    writeToFile -file $outputFile -path $folderLocation -str " > Excel no configuration found for DDE in this version"
+                }
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Office excel version is older then 2007 no DDE option to disable"
+            }
+            if($n -ge 14.0){
+                #Outlook
+                $reg = Get-ItemProperty -Path "HKCU:Software\Microsoft\Office\$n\Word\Options\WordMail" -Name "DontUpdateLinks" -ErrorAction SilentlyContinue
+                if($null -ne $reg){
+                    if($reg.DontUpdateLinks -eq 1){
+                        writeToFile -file $outputFile -path $folderLocation -str " > Outlook update links (DDE) is disabled"
+                    }
+                    else{
+                        writeToFile -file $outputFile -path $folderLocation -str " > Outlook update links (DDE) is Enabled "
+                    }
+                }
+                else {
+                    writeToFile -file $outputFile -path $folderLocation -str " > Outlook no configuration found for DDE in this version"
+                }
+
+                #Word
+                $reg = Get-ItemProperty -Path "HKCU:Software\Microsoft\Office\$n\Word\Options" -Name "DontUpdateLinks" -ErrorAction SilentlyContinue
+                if($null -ne $reg){
+                    if($reg.DontUpdateLinks -eq 1){
+                        writeToFile -file $outputFile -path $folderLocation -str " > Word update links (DDE) is disabled"
+                    }
+                    else{
+                        writeToFile -file $outputFile -path $folderLocation -str " > Word update links (DDE) is Enabled "
+                    }
+                }
+                else {
+                    writeToFile -file $outputFile -path $folderLocation -str " > Word no configuration found for DDE in this version"
+                }
+
+            }
+            elseif ($n -eq 12.0) {
+                $reg = Get-ItemProperty -Path "HKCU:Software\Microsoft\Office\12.0\Word\Options\vpre" -Name "fNoCalclinksOnopen_90_1" -ErrorAction SilentlyContinue
+                if($null -ne $reg){
+                    if($reg.fNoCalclinksOnopen_90_1 -eq 1){
+                        writeToFile -file $outputFile -path $folderLocation -str " > Outlook and Word update links (DDE) is disabled"
+                    }
+                    else{
+                        writeToFile -file $outputFile -path $folderLocation -str " > Outlook and Word update links (DDE) is Enabled "
+                    }
+                }
+                else {
+                    writeToFile -file $outputFile -path $folderLocation -str " > Outlook and Word no configuration found for DDE in this version"
+                }
+                
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Office outlook version is older then 2007 no DDE option to disable"
+            }
+
+        }
+
+        ## Macros need to add every office has it's own checks
+        # site is unavailable to continue
+        # https://admx.help/?Category=Office2007&Policy=ppt12.Office.Microsoft.Policies.Windows::L_VBAWarningsPolicy
+        # https://admx.help/?Category=Office2016&Policy=word16.Office.Microsoft.Policies.Windows::L_VBAWarningsPolicy
+        # https://www.heelpbook.net/2016/how-to-control-macro-settings-using-registry-keys-or-gpos/
+
+        
+
+    }
+
+
+
 }
 
 ###General val's
