@@ -1,27 +1,29 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.26" # used for logging purposes
+$Version = "1.27" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
-- Add AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check for bugs in the SMB1 check - fixed need to check
 - Debug the FirewallProducts check
-- Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Debug the RDP check on multiple OS versions
+- Add check into NetSessionEnum to see whether running on a DC
+- Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
+- Add amsi test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
+- Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
+- Move lists to CSV format instead of TXT
 - Integrate more checks from https://adsecurity.org/?p=3299
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
--- Check Kerberos encryption algorithms
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
+-- Check Kerberos encryption algorithms
 -- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
-- Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
 - Test on Windows 2008
+- Consider adding AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Check AV/Defender configuration also on non-Windows 10 - worked on windows 11
-- Move lists to CSV format instead of TXT
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
@@ -31,7 +33,6 @@ $Version = "1.26" # used for logging purposes
 - Check for Device Control (GPO or dedicated software)
 - Add More settings from hardening docs
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
-- add amsi test (find something that is not ECAR based) https://www.blackhillsinfosec.com/is-this-thing-on/
 
 ##########################################################
 Controls Checklist:
@@ -39,25 +40,27 @@ Controls Checklist:
 - LSA Protection is enabled (LSA-Protection file, Win 8.1/2012R2 and above)
 - Credential guard is running (Credential-Guard file, Win 10/2016 and above)
 - SMB Signing is enforced (SMB file)
-- SMB1 Server is not installed (SMB file)
+- SMB1 Server is not installed (SMB file, low priority)
 - NTLMv2 is enforced  (Domain-Hardening file)
 - LLMNR is disabled (LLMNR_and_NETBIOS file)
-- NETBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
+- NetBIOS Name Service is disabled (LLMNR_and_NETBIOS file)
 - WDigest is disabled (WDigest file)
-- Net Session permissions are hardened (NetSession file)
+- Net Session permissions are hardened (NetSession file, low priority for non-DC member servers)
 - SAM enumeration permissions are hardened (SAM-Enumeration file)
 - RDP timeout for disconnected sessions is configured (RDP file)
-- RDP NLA is required (RDP file)
-- PowerShell v2 is uninstalled (PowerShellv2 file, and/or Windows-Features file: PowerShell-V2 feature)
+- RDP NLA is required (RDP file, low priority)
+- PowerShell v2 is uninstalled (PowerShellv2 file)
 - PowerShell logging is enabled (Audit-Policy file)
+- Always install with elevated privileges permissions isn't enabled (Domain-Hardening file)
+- Access to SCCM/WSUS server configured with encrypted HTTPS (Domain-Hardening file, or gpresult file: Windows Components > Windows Update > Specify intranet Microsoft update service location)
+- No services are vulnerable to unquoted path attack (Services file)
+- Outbound internet access is restricted for ICMP, TCP, HTTP/S, DNS (Internet-Connectivity file)
 - Audit policy is sufficient (Audit-Policy file, admin needed)
-- Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
-- Group policy settings are reapplied even when not changed (gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing, admin needed)
+- Group policy settings are reapplied even when not changed (Domain-Hardening file, or gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing)
+- Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
 - Credential delegation is not configured or disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
-- Local administrators group is configured as a restricted group with fixed members (Security-Policy inf file: Restricted Groups, admin needed)
-- Access to SCCM server configured with encrypted HTTPS (gpresult file: Windows Components> Windows Update > Specify intranet Microsoft update service location)
-- Number of cached credentials is limited (Security-Policy inf file: Interactive logon: Number of previous logons to cache, admin needed)
+- Local administrators group is configured as a restricted group with fixed members (Security-Policy inf file: Restricted Groups, admin needed, low priority)
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
 - Antivirus is running and updated, advanced Windows Defender features are utilized (AntiVirus file)
 - Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch, admin needed)
@@ -69,19 +72,12 @@ Controls Checklist:
 - User Rights Assignment privileges don't allow privilege escalation by non-admins (Security-Policy inf file: User Rights Assignment, admin needed)
 - Services are not running with overly permissive privileges (Services file)
 - No irrelevant/malicious processes/services/software exists (Services, Process-list, Software, Netstat files)
-- Outbound internet access is restricted (Internet-Connectivity file)
-- Event Log size is enlarged and/or logs are exported to SIEM
-- Macros are restricted
-- Defender ASR rules are configured (AntiVirus file)
-- Host firewall rules are configured to block inbound (Windows-Firewall and Windows-Firewall-Rules files)
-- GPO Enforce reprocess check (Domain-Hardening file)
-- Always install with elevated privileges setting (Domain-Hardening file)
-- Check if external DNS servers (8.8.8.8, etc.) are accessible (Internet-Connectivity file)
-- Log errors to a log file using Start/Stop-Transcript (ScriptTranscript file)
-- Check for Windows Update / WSUS settings, check for WSUS over HTTP (Domain hardening file)
-- WPAD and proxy configuration check (Internet-Connectivity file)
-- Unquoted service path attack check  (Services file)
-- Check ability to connect to Wi-Fi while connected to wired (Domain-Hardening file)
+- Event Log size is enlarged and/or logs are exported to SIEM (Audit-Policy file)
+- Host firewall rules are configured to block/filter inbound (Windows-Firewall and Windows-Firewall-Rules files)
+- Windows Update settings are hardened (Domain-Hardening file)
+- WPAD is not in use, proxy is configured according to network's architecture (Internet-Connectivity file)
+- Macros are restricted (gpresult file, currently WIP)
+- No ability to connect to Wi-Fi while connected to wired network (Domain-Hardening file)
 
 ##########################################################
 @Haim Nachmias @Nital Ruzin
@@ -120,8 +116,8 @@ function writeToLog {
         [string]$str
     )
     $stamp = (Get-Date).ToString("yyyy/MM/dd HH:mm:ss")
-    $logMassage = "$stamp $str"
-    writeToFile -path $hostname -file "Log_$hostname.txt" -str $logMassage
+    $logMessage = "$stamp $str"
+    writeToFile -path $hostname -file "Log_$hostname.txt" -str $logMessage
 }
 
 function getNameForFile{
@@ -769,11 +765,11 @@ function checkSMBHardening {
 }
 
 # Getting RDP security settings
-function checkRDPSecuirty {
+function checkRDPSecurity {
     param (
         $name
     )
-    writeToLog -str "running checkRDPSecuirty function"
+    writeToLog -str "running checkRDPSecurity function"
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting RDP security settings..." -ForegroundColor Yellow
     
@@ -1947,7 +1943,7 @@ function checkWinUpdateConfig{
         5 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to allow local admin to choose setting " }
         Default {writeToFile -file $outputFile -path $folderLocation -str " > unknown windows update configuration"}
     }
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Wsus configuration ============="
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= WSUS configuration ============="
     $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "UseWUServer" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.UseWUServer -eq 1 ){
         $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate" -Name "WUServer" -ErrorAction SilentlyContinue
@@ -2170,15 +2166,10 @@ function checkMacroAndDDE{
         # https://admx.help/?Category=Office2016&Policy=word16.Office.Microsoft.Policies.Windows::L_VBAWarningsPolicy
         # https://www.heelpbook.net/2016/how-to-control-macro-settings-using-registry-keys-or-gpos/
 
-        
-
     }
-
-
-
 }
 
-###General val's
+### General values
 # get hostname to use as the folder name and file names
 $hostname = hostname
 <#
@@ -2193,7 +2184,7 @@ Win10Enterprise
 need to check on multiple machines
 #>
 $folderLocation = $hostname
-$transcriptFile = getNameForFile -name "ScriptTranscript" -extension ".txt"
+$transcriptFile = getNameForFile -name "Log-ScriptTranscript" -extension ".txt"
 # get the windows version for later use
 $winVersion = [System.Environment]::OSVersion.Version
 # powershell version 
@@ -2295,7 +2286,7 @@ dataLocalUsers -name "Local-Users"
 checkSMBHardening -name "SMB"
 
 # Getting RDP security settings
-checkRDPSecuirty -name "RDP"
+checkRDPSecurity -name "RDP"
 
 # getting credential guard settings (for Windows 10/2016 and above only)
 dataCredentialGuard -name "Credential-Guard"
