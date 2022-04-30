@@ -1986,14 +1986,14 @@ function checkWinUpdateConfig{
     }
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= WSUS configuration ============="
     $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "UseWUServer" -ErrorAction SilentlyContinue
-    if($null -ne $reg -and $reg.UseWUServer -eq 1 ){
+    if ($null -ne $reg -and $reg.UseWUServer -eq 1 ){
         $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate" -Name "WUServer" -ErrorAction SilentlyContinue
-        if($null -eq $reg){
+        if ($null -eq $reg) {
             writeToFile -file $outputFile -path $folderLocation -str " > WSUS configuration found but no server has been configured."
         }
-        else{
+        else {
             $test = $reg.WUServer
-            if($test -like "http://*"){
+            if ($test -like "http://*") {
                 writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configured with unencrypted HTTP connection - this configuration may be vulnerable to local privilege escalation and may be considered a finding."
                 writeToFile -file $outputFile -path $folderLocation -str " > For more information, see: https://book.hacktricks.xyz/windows/windows-local-privilege-escalation#wsus"
                 writeToFile -file $outputFile -path $folderLocation -str " > Note that SCCM with Enhanced HTTP configured my be immune to this attack. For more information, see: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/enhanced-http"
@@ -2002,18 +2002,18 @@ function checkWinUpdateConfig{
                     $test = $test.Substring(0,$test.IndexOf("/"))
                 }
             }
-            else{
+            else {
                 writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configured with HTTPS connection - this is the hardened configuration."
                 $test = $test.Substring(8)
                 if($test.IndexOf("/") -ge 0){
                     $test = $test.Substring(0,$test.IndexOf("/"))
                 }
             }
-            try{
+            try {
                 [IPAddress]$test | Out-Null
                 writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configured with an IP address - this might be a bad practice (using NTLM authentication)."
             }
-            catch{
+            catch {
                 writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configurated with an IP address - this might be a bad practice (using NTLM authentication)."
             }
             writeToFile -file $outputFile -path $folderLocation -str (" > WSUS Server is: "+ $reg.WUServer)
@@ -2022,9 +2022,6 @@ function checkWinUpdateConfig{
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > No WSUS configuration found."
     }
-
-
-
 }
 
 #check for unquoted path vulnerability in services running on the machine
@@ -2035,23 +2032,23 @@ function checkUnquotedSePath {
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkUnquotedSePath function"
     #writeToScreen -str "Checking if the system has a service vulnerable to Unquoted path escalation attack" -ForegroundColor Yellow
-    writeToScreen -str "Checking for services vulnerable to unquoted path local privilege escalation attack" -ForegroundColor Yellow
+    writeToScreen -str "Checking for services vulnerable to unquoted path privilege escalation..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Unquoted path vulnerability ============="
     writeToFile -file $outputFile -path $folderLocation -str "This test is checking all services on the computer if there is a service that is not running from a quoted path and starts outside of the protected folder (i.e. Windows folder)"
     writeToFile -file $outputFile -path $folderLocation -str "for more information about the attack: https://attack.mitre.org/techniques/T1574/009"
     $services = Get-WmiObject win32_service | Select-Object Name, DisplayName, PathName
     $badPaths = @()
     $boolBadPath = $false
-    foreach($service in $services){
+    foreach ($service in $services){
         $test = $service.PathName
-        if($null -ne $test){
-            if($test -notlike "`"*" -and $test -notlike "C:\Windows\*"){
+        if ($null -ne $test){
+            if ($test -notlike "`"*" -and $test -notlike "C:\Windows\*"){
                 $badPaths += $service
                 $boolBadPath = $true
             }
         }
     }
-    if($boolBadPath){
+    if ($boolBadPath){
         writeToFile -file $outputFile -path $folderLocation -str " > There are vulnerable services in this machine:"
         writeToFile -file $outputFile -path $folderLocation -str  ($badPaths | Out-String)
     }
@@ -2068,11 +2065,11 @@ function checkSimulEhtrAndWifi {
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkSimulEhtrAndWifi function"
     writeToScreen -str "Checking if simultaneous connection to Ethernet and Wi-Fi is allowed..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= check simultaneous Ethernet and WIFI is possible ============="
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Check if simultaneous Ethernet and Wi-Fi is allowed ============="
     if ((($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))) {
         writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured"
         $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WcmSvc\GroupPolicy" -Name "fMinimizeConnections" -ErrorAction SilentlyContinue
-        if($null -ne $reg){
+        if ($null -ne $reg){
             switch ($reg.fMinimizeConnections) {
                 0 { writeToFile -file $outputFile -path $folderLocation -str " > Machine is not hardened and allow simultaneous connections" }
                 1 { writeToFile -file $outputFile -path $folderLocation -str " > Any new automatic internet connection is blocked when the computer has at least one active internet connection to a preferred type of network." }
@@ -2119,11 +2116,11 @@ function checkMacroAndDDE{
     #Get-WmiObject win32_product | where{$_.Name -like "*Office *" -and $_.Vendor -like "*Microsoft*"} | select Name,Version
     $versions = Get-WmiObject win32_product | Where-Object{$_.Name -like "*Office *" -and $_.Vendor -like "*Microsoft*"} | Select-Object Version
     $versionCut = @()
-    foreach($ver in $versions.version){
+    foreach ($ver in $versions.version){
         $tmp = $ver.IndexOf(".")
         $flag = $true
-        foreach($n in $versionCut ){
-            if($n -eq $ver.Substring(0,$tmp+2)){
+        foreach ($n in $versionCut ){
+            if ($n -eq $ver.Substring(0,$tmp+2)){
                 $flag = $false
             }
         }
@@ -2131,7 +2128,7 @@ function checkMacroAndDDE{
             $versionCut += $ver.Substring(0,$tmp+2)
         }
     }
-    if($versionCut.Count -ge 1){
+    if ($versionCut.Count -ge 1){
         writeToFile -file $outputFile -path $folderLocation -str "`r`n=== DDE Configuration"
         foreach($n in $versionCut){
             writeToFile -file $outputFile -path $folderLocation -str "Office version $n"
@@ -2305,13 +2302,13 @@ dataWinFeatures -name "Windows-Features"
 # get installed hotfixes (/format:htable doesn't always work)
 dataInstalledHotfixes -name "Hotfixes"
 
-# Check Windows update configuration
+# check Windows update configuration
 checkWinUpdateConfig -name "Domain-Hardening"
 
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
 dataRunningProcess -name "Process-list"
 
-#check for unquoted path vulnerability in services running on the machine
+# check for unquoted path vulnerability in services running on the machine
 checkUnquotedSePath -name "Services"
 
 # get services
@@ -2320,15 +2317,15 @@ dataServices -name "Services"
 # get installed software
 dataInstalledSoftware -name "Software"
 
-# get shared folders (Share permissions are missing for older PowerShell versions)
-dataSharedFolders -name "Shares"
-
-# get local+domain account policy
+# get local and domain account policy
 dataAccountPolicy -name "AccountPolicy"
 
-# get local users + admins
+# get local users and admins
 dataLocalUsers -name "Local-Users"
-	
+
+# NTLMv2 enforcement check
+checkNTLMv2 -name "Domain-Hardening"
+
 # check SMB protocol hardening
 checkSMBHardening -name "SMB"
 
@@ -2340,9 +2337,6 @@ dataCredentialGuard -name "Credential-Guard"
 
 # getting LSA protection configuration (for Windows 8.1 and above only)
 dataLSAProtectionConf -name "LSA-Protection"
-
-# search for sensitive information (i.e. cleartext passwords) if the flag exists
-checkSensitiveInfo -name "Sensitive-Info"
 
 # get antivirus status
 checkAntiVirusStatus -name "Antivirus"
@@ -2365,19 +2359,16 @@ checkSAMEnum -name "SAM-Enumeration"
 # check for PowerShell v2 installation, which lacks security features (logging, AMSI)
 checkPowershellVer -name "PowerShell-Versions"
 
-# NTLMv2 enforcement check - check if there is a GPO that enforce the use of NTLMv2 (checking registry)
-checkNTLMv2 -name "Domain-Hardening"
-
 # GPO reprocess check
 checkGPOReprocess -name "Domain-Hardening"
 
-# Commandline Audit settings check
+# Command line Audit settings check
 checkCommandLineAudit -name "Audit-Policy"
 
 # Powershell Audit settings check
 checkPowerShellAudit -name "Audit-Policy"
 
-#check log size
+# Check Event Log size
 checkLogSize -name "Audit-Policy"
 
 # Audit policy settings check
@@ -2391,6 +2382,12 @@ checkSafeModeAcc4NonAdmin -name "Domain-Hardening"
 
 # Check if there is hardening preventing user from connecting to multiple networks simultaneous 
 checkSimulEhtrAndWifi -name "Domain-Hardening"
+
+# get shared folders (Share permissions are missing for older PowerShell versions)
+dataSharedFolders -name "Shares"
+
+# search for sensitive information (i.e. cleartext passwords) if the flag exists
+checkSensitiveInfo -name "Sensitive-Info"
 
 # get various system info (can take a few seconds)
 dataSystemInfo -name "Systeminfo"
