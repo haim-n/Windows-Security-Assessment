@@ -1,11 +1,12 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.27" # used for logging purposes
+$Version = "1.28" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table
 - Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
+- Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
 - Check for bugs in the SMB1 check - fixed need to check
 - Debug the FirewallProducts check
 - Debug the RDP check on multiple OS versions
@@ -13,8 +14,9 @@ $Version = "1.27" # used for logging purposes
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
 - Add amsi test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
-- Move lists to CSV format instead of TXT
-- Integrate more checks from https://adsecurity.org/?p=3299
+- Move lists (like processes or services) to CSV format instead of TXT
+- Consider seperating the Domain-Hardening output files - checks aren't related
+- Ensure that the internet connectivity check (curl over HTTP/S) proxy aware
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
 -- Check Kerberos encryption algorithms
@@ -23,7 +25,9 @@ $Version = "1.27" # used for logging purposes
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Test on Windows 2008
 - Consider adding AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
-- Check AV/Defender configuration also on non-Windows 10 - worked on windows 11
+- Add check for mDNS? https://f20.be/blog/mdns
+- Add check for storage of passwords? https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376
+- Check AV/Defender configuration also on non-Windows 10/11, but on Windows Server
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
@@ -31,7 +35,10 @@ $Version = "1.27" # used for logging purposes
 - Enhance internet connectivity checks (use proxy configuration) - need to check proxy settings on multiple types of deployments 
 - Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
 - Check for Device Control (GPO or dedicated software)
-- Add More settings from hardening docs
+- Add more hardening checks from here: https://adsecurity.org/?p=3299
+- Add more hardening checks from here: https://docs.microsoft.com/en-us/windows/security/threat-protection/overview-of-threat-mitigations-in-windows-10
+- Add more hardening checks from here: https://twitter.com/dwizzzleMSFT/status/1511368944380100608
+- Add more settings from hardening docs
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 
 ##########################################################
@@ -181,30 +188,30 @@ function checkInternetAccess{
         $name 
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
-    writeToLog -str "running checkInternetAccess function"
-    writeToScreen -str "Trying to access the internet this check will take maximum 30 sec... " -ForegroundColor Yellow
+    writeToLog -str "running checkInternetAccess function"    
+    writeToScreen -str "Checking if internet access if allowed... " -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= ping -n 2 8.8.8.8 =============" 
     writeToFile -file $outputFile -path $folderLocation -str (ping -n 2 8.8.8.8)
     writeToFile -file $outputFile -path $folderLocation -str "============= DNS request for 8.8.8.8 =============" 
     if($psVer -ge 4)
     {
-        $test = Resolve-DnsName -Name google.com -Server 8.8.8.8 -QuickTimeout -NoRecursion -NoIdn -ErrorAction SilentlyContinue
-        if($null -ne $test){
-            writeToFile -file $outputFile -path $folderLocation -str " > DNS request was successful "
-
+        $test = Resolve-DnsName -Name google.com -Server 8.8.8.8 -QuickTimeout -NoIdn -ErrorAction SilentlyContinue
+        if ($null -ne $test){
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server was successful. This may be considered a finding, at least on servers."
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
             writeToFile -file $outputFile -path $folderLocation -str ($test | Out-String)
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > DNS request received a timeout "
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server received a timeout. This is generally good - direct access to internet DNS isn't allowed."
         }
     }
     else{
         $result = nslookup google.com 8.8.8.8
-        if($result -like "*DNS request timed out*"){
-            writeToFile -file $outputFile -path $folderLocation -str " > DNS request received a timeout "
+        if ($result -like "*DNS request timed out*"){
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server received a timeout. This is generally good - direct access to internet DNS isn't allowed."
         }
         else{
+            writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server didn't receive a timeout. This may be considered a finding, at least on servers."
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
             writeToFile -file $outputFile -path $folderLocation -str ($result | Out-String)
         }
@@ -213,28 +220,28 @@ function checkInternetAccess{
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net =============" 
         $test = $null
         try{
-            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 3 -Uri "http://portquiz.net" -ErrorAction SilentlyContinue
+            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net" -ErrorAction SilentlyContinue
         }
         catch{
             $test = $null
         }
         if($null -ne $test){
             if($test.StatusCode -eq 200){
-                writeToFile -file $outputFile -path $folderLocation -str " > port 80 is open " 
+                writeToFile -file $outputFile -path $folderLocation -str " > Port 80 is open for outbound internet access. This may be considered a finding, at least on servers." 
             }
             else {
-                $str = " > test received http code: "+$test.StatusCode+" port 80 might be close - FW URL filtering might block this test "
+                $str = " > test received http code: "+$test.StatusCode+" Port 80 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
             }
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > port 80 received a time out "
+            writeToFile -file $outputFile -path $folderLocation -str " > Port 80 outbound access to internet failed - received a time out."
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:443 =============" 
         $test = $null
         try{
-            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 3 -Uri "http://portquiz.net:443" -ErrorAction SilentlyContinue
+            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:443" -ErrorAction SilentlyContinue
         }
         catch{
             $test = $null
@@ -242,42 +249,42 @@ function checkInternetAccess{
         
         if($null -ne $test){
             if($test.StatusCode -eq 200){
-                writeToFile -file $outputFile -path $folderLocation -str " > port 443 is open " 
+                writeToFile -file $outputFile -path $folderLocation -str " > Port 443 is open for outbound internet access. This may be considered a finding, at least on servers." 
             }
             else {
-                $str = " > test received http code: "+$test.StatusCode+" port 443 might be close - FW URL filtering might block this test "
+                $str = " > test received http code: "+$test.StatusCode+" Port 443 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
             }
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > port 443 received a time out "
+            writeToFile -file $outputFile -path $folderLocation -str " > Port 443 outbound access to internet failed - received a time out."
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:666 =============" 
         $test = $null
         try{
-            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 3 -Uri "http://portquiz.net:666" -ErrorAction SilentlyContinue
+            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:666" -ErrorAction SilentlyContinue
         }
         catch{
             $test = $null
         }
         if($null -ne $test){
             if($test.StatusCode -eq 200){
-                writeToFile -file $outputFile -path $folderLocation -str " > port 666 is open " 
+                writeToFile -file $outputFile -path $folderLocation -str " > Port 666 is open for outbound internet access. This may be considered a finding, at least on servers." 
             }
             else {
-                $str = " > test received http code: "+$test.StatusCode+" port 666 might be close - FW URL filtering might block this test "
+                $str = " > test received http code: "+$test.StatusCode+" Port 666 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
             }
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > port 666 received a time out "
+            writeToFile -file $outputFile -path $folderLocation -str " > Port 666 outbound access to internet failed - received a time out."
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:8080 =============" 
         $test = $null
         try{
-            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 3 -Uri "http://portquiz.net:8080" -ErrorAction SilentlyContinue
+            $test = Invoke-WebRequest -DisableKeepAlive -TimeoutSec 2 -Uri "http://portquiz.net:8080" -ErrorAction SilentlyContinue
         }
         catch{
             $test = $null
@@ -285,27 +292,26 @@ function checkInternetAccess{
         
         if($null -ne $test){
             if($test.StatusCode -eq 200){
-                writeToFile -file $outputFile -path $folderLocation -str " > port 8080 is open " 
+                writeToFile -file $outputFile -path $folderLocation -str " > Port 8080 is open for outbound internet access. This may be considered a finding, at least on servers." 
             }
             else {
-                $str = " > test received http code: "+$test.StatusCode+" port 8080 might be close - FW URL filtering might block this test "
+                $str = " > test received http code: "+$test.StatusCode+" Port 8080 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
             }
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > port 8080 received a time out "
+            writeToFile -file $outputFile -path $folderLocation -str " > Port 8080 outbound access to internet failed - received a time out."
         }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " powershell is lower then version 4 other checks are not supported "
-        writeToLog -str "Function checkInternetAccess: Powershell executing the script does not support curl command skipping network connection test"
+        writeToFile -file $outputFile -path $folderLocation -str "PowerShell is lower then version 4. Other checks are not supported."
+        writeToLog -str "Function checkInternetAccess: PowerShell executing the script does not support curl command. Skipping network connection test."
     }
     <#
-    # very long test skipping it for now 
+    # very long test - skipping it for now 
     writeToFile -file $outputFile -path $folderLocation -str "============= tracert -d -w 100 8.8.8.8 =============" 
     writeToFile -file $outputFile -path $folderLocation -str (tracert -d -h 10 -w 50 8.8.8.8)
     #>
-
 }
 
 # get network connections (run-as admin is required for -b associated application switch)
@@ -605,7 +611,7 @@ function dataLocalUsers {
     $outputFile = getNameForFile -name $name -extension ".txt"
     if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -ne 2)
     {
-        writeToScreen -str "Getting local users + administrators..." -ForegroundColor Yellow
+        writeToScreen -str "Getting local users and administrators..." -ForegroundColor Yellow
         writeToFile -file $outputFile -path $folderLocation -str "============= Local Administrators ============="
         writeToFile -file $outputFile -path $folderLocation -str "Output of `"NET LOCALGROUP administrators`" command:`r`n"
         writeToFile -file $outputFile -path $folderLocation -str (NET LOCALGROUP administrators)
@@ -848,7 +854,7 @@ function dataCredentialGuard {
     $outputFile = getNameForFile -name $name -extension ".txt"
     if ($winVersion.Major -ge 10)
     {
-        writeToScreen -str "Getting credential guard settings..." -ForegroundColor Yellow
+        writeToScreen -str "Getting Credential Guard settings..." -ForegroundColor Yellow
         $DevGuard = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard
         writeToFile -file $outputFile -path $folderLocation -str "============= Credential Guard Settings from WMI ============="
         if ($null -eq $DevGuard.SecurityServicesConfigured)
@@ -946,7 +952,7 @@ function checkSensitiveInfo {
     
 }
 
-# get anti-virus status
+# get antivirus status
 function checkAntiVirusStatus {
     param (
         $name
@@ -956,7 +962,7 @@ function checkAntiVirusStatus {
     # works only on Windows Clients, Not on Servers (2008, 2012, etc.). Maybe the "Get-MpPreference" could work on servers - wasn't tested.
     if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 1)
     {
-        writeToScreen -str "Getting Anti-Virus status..." -ForegroundColor Yellow
+        writeToScreen -str "Getting Antivirus status..." -ForegroundColor Yellow
         if ($winVersion.Major -ge 6)
         {
             $AntiVirusProducts = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiVirusProduct
@@ -973,7 +979,7 @@ function checkAntiVirusStatus {
         }
         if ($null -eq $AntiVirusProducts)
             {writeToFile -file $outputFile -path $folderLocation -str "No Anti Virus products were found."}
-            writeToFile -file $outputFile -path $folderLocation -str "============= Anti-Virus Products Status ============="
+            writeToFile -file $outputFile -path $folderLocation -str "============= Antivirus Products Status ============="
         foreach ($av in $AntiVirusProducts)
         {    
             writeToFile -file $outputFile -path $folderLocation -str ("Product Display name: " + $av.displayname )
@@ -991,34 +997,44 @@ function checkAntiVirusStatus {
             else
                 {writeToFile -file $outputFile -path $folderLocation -str "Virus definitions are NOT up to date"}
         }
-        writeToFile -file $outputFile -path $folderLocation -str "============= Anti-Virus Products Status (Raw Data) ============="
+        writeToFile -file $outputFile -path $folderLocation -str "============= Antivirus Products Status (Raw Data) ============="
         writeToFile -file $outputFile -path $folderLocation -str ($AntiVirusProducts |Out-String)
         writeToFile -file $outputFile -path $folderLocation -str "============= Firewall Products Status (Raw Data) =============" 
         writeToFile -file $outputFile -path $folderLocation -str ($FirewallProducts | Out-String)
         writeToFile -file $outputFile -path $folderLocation -str "============= Anti-Spyware Products Status (Raw Data) =============" 
         writeToFile -file $outputFile -path $folderLocation -str ($AntiSpywareProducts | Out-String)
-        # check Windows Defender settings
+        
+        # check Windows Defender settings - registry query
         writeToFile -file $outputFile -path $folderLocation -str "============= Windows Defender Settings Status =============`r`n"
-        $WinDefenderSettings = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager"
-        switch ($WinDefenderSettings.AllowRealtimeMonitoring)
+        $WinDefenderSettings = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager" -ErrorAction SilentlyContinue
+        if ($WinDefenderSettings -eq $null)
         {
-            $null {writeToFile -file $outputFile -path $folderLocation -str "AllowRealtimeMonitoring registry value was not found." }
-            0 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Real Time Monitoring is off."}
-            1 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Real Time Monitoring is on."}
+            writeToFile -file $outputFile -path $folderLocation -str "Could not query registry values under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager."
         }
-        switch ($WinDefenderSettings.EnableNetworkProtection)
+        else
         {
-            $null {writeToFile -file $outputFile -path $folderLocation -str "EnableNetworkProtection registry value was not found." }
-            0 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is off." }
-            1 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is on."}
-            2 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is set to audit mode."}
+            switch ($WinDefenderSettings.AllowRealtimeMonitoring)
+            {
+                $null {writeToFile -file $outputFile -path $folderLocation -str "AllowRealtimeMonitoring registry value was not found."}
+                0 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Real Time Monitoring is off."}
+                1 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Real Time Monitoring is on."}
+            }
+            switch ($WinDefenderSettings.EnableNetworkProtection)
+            {
+                $null {writeToFile -file $outputFile -path $folderLocation -str "EnableNetworkProtection registry value was not found."}
+                0 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is off."}
+                1 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is on."}
+                2 {writeToFile -file $outputFile -path $folderLocation -str "Windows Defender Network Protection is set to audit mode."}
+            }
+            writeToFile -file $outputFile -path $folderLocation -str "---------------------------------"
+            writeToFile -file $outputFile -path $folderLocation -str "Values under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager:"
+            writeToFile -file $outputFile -path $folderLocation -str ($WinDefenderSettings | Out-String)
+            writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
         }
-        writeToFile -file $outputFile -path $folderLocation -str "---------------------------------"
-        writeToFile -file $outputFile -path $folderLocation -str "Values under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager:"
-        writeToFile -file $outputFile -path $folderLocation -str ($WinDefenderSettings | Out-String)
-        writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
-        writeToFile -file $outputFile -path $folderLocation -str "Raw output of Get-MpPreference (Defender settings):"
+        
+        # check Windows Defender settings - Get-MpPreference command
         $MpPreference = Get-MpPreference
+        writeToFile -file $outputFile -path $folderLocation -str "Raw output of Get-MpPreference (Defender settings):"        
         writeToFile -file $outputFile -path $folderLocation -str ($MpPreference | Out-String)
         writeToFile -file $outputFile -path $folderLocation -str "---------------------------------" 
         $MpComputerStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue
@@ -1340,22 +1356,22 @@ function checkNTLMv2 {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkNTLMv2 function"
-    writeToScreen -str "Getting NTLM version enforcement..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "============= NTLM Check ============="
-    writeToFile -file $outputFile -path $folderLocation -str "NTLMv1 & LM are  legacy authentication protocols that are reversible"
-    writeToFile -file $outputFile -path $folderLocation -str "If there are legacy systems in the network configure Level 3 NTLM hardening on the domain (that way only the legacy system will use the legacy authentication) otherwise select Level 5"
-    writeToFile -file $outputFile -path $folderLocation -str "For more information go to: https://docs.microsoft.com/en-us/troubleshoot/windows-client/windows-security/enable-ntlm-2-authentication `r`n"
+    writeToScreen -str "Getting NTLM version configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "============= NTLM Version Configuration ============="
+    writeToFile -file $outputFile -path $folderLocation -str "NTLMv1 & LM are legacy authentication protocols that are reversible and can be exploited for all kinds of attacks, including RCE. For example, see: https://github.com/NotMedic/NetNTLMtoSilverTicket"
+    writeToFile -file $outputFile -path $folderLocation -str "If there are specific legacy systems in the domain that may need NTLMv1 and LM, configure Level 3 NTLM hardening on the Domain Controllers - this way only the legacy system will use the legacy authentication. Otherwise, select Level 5 on Domain Controllers - so they will refuse NTLMv1 and LM attempts. For the member servers - ensure at least Level 3."
+    writeToFile -file $outputFile -path $folderLocation -str "For more information, see: https://docs.microsoft.com/en-us/troubleshoot/windows-client/windows-security/enable-ntlm-2-authentication `r`n"
     $temp = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LmCompatibilityLevel -ErrorAction SilentlyContinue # registry key that contains the NTLM restrictions
     if($null -eq $temp){
-        writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default`r`n" #using system default depends on OS version
+        writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default. On Windows 2008/7 and above, default is to send NTLMv2 only (Level 3), which is quite secure. `r`n" #using system default depends on OS version
     }
     switch ($temp.lmcompatibilitylevel) {
         (0) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
         (1) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
         (2) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n" }
-        (3) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration`r`n"}
-        (4) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration`r`n"}
-        (5) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - A good thing!)`r`n"}
+        (3) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration.`r`n"}
+        (4) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration. If this is a DC, it means that LM is not applicable in the domain at all.`r`n"}
+        (5) { writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - This is the most hardened configuration. If this is a DC, it means that NTLMv2 and LM are not applicable in the domain at all.)`r`n"}
         Default {writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`r`n"}
     }
 }
@@ -1367,32 +1383,53 @@ function checkGPOReprocess {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkGPOReprocess function"
-    writeToScreen -str "Getting GPO enforcement..." -ForegroundColor Yellow
+    writeToScreen -str "Getting GPO reprocess configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= GPO Reprocess Check ============="
-    writeToFile -file $outputFile -path $folderLocation -str "If GPO reprocess is not enforced once the GPO received is the first and lest time the gpo is enforced (until next change)"
-    writeToFile -file $outputFile -path $folderLocation -str "GPO can be overridden with administrator permission - it is recommended that all security settings will be repossessed every time the system checks for GPO change`r`n"
-    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains registry policy reprocess settings 
-    if($null -eq $temp){
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is not configured "processed even if not changed"' 
-    }
-    elseif ($temp.NoGPOListChanges -ne 0) {
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is not configured correctly "processed even if not changed"' 
-    }
-    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains script policy reprocess settings 
-    if($null -eq $temp){
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured "processed even if not changed"' 
-    }
-    elseif ($temp.NoGPOListChanges -ne 0) {
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured correctly "processed even if not changed"' 
-    }
-    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{827D319E-6EAC-11D2-A4EA-00C04F79F83A}" -Name NoGPOListChanges -ErrorAction SilentlyContinue # registry that contains security policy reprocess settings 
-    if($null -eq $temp){
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is not configured "processed even if not changed"'
-    }
-    elseif ($temp.NoGPOListChanges -ne 0) {
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is not configured correctly "processed even if not changed"'
-    }
+    writeToFile -file $outputFile -path $folderLocation -str "If GPO reprocess is not enabled, the GPO settings can be overridden locally by an admistrator. Upon the next gpupdate process, the GPO settings will not be reapplied, until the next GPO change."
+    writeToFile -file $outputFile -path $folderLocation -str "It is recommended that all security settings will be repossessed (reapplied) every time the system checks for GPO change, even if there were no GPO changes."
+    writeToFile -file $outputFile -path $folderLocation -str "For more information, see: https://www.stigviewer.com/stig/windows_server_2012_member_server/2014-01-07/finding/V-4448`r`n"
     
+    # checking registry that contains registry policy reprocess settings
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -Name NoGPOListChanges -ErrorAction SilentlyContinue
+    if ($temp -eq $null) {
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is not configured - settings left as default. Can be considered a finding.'
+    }
+    else {
+        if ($temp.NoGPOListChanges -eq 0) {
+            writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is enabled - this is the hardened configuration.'
+        }
+        else {
+            writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is disabled (this setting was set on purpose). Can be considered a finding.'
+        }
+    }
+
+    # checking registry that contains script policy reprocess settings
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -Name NoGPOListChanges -ErrorAction SilentlyContinue
+    if ($temp -eq $null) {
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured - settings left as default. Can be considered a finding.'
+    }
+    else {
+        if ($temp.NoGPOListChanges -eq 0) {
+            writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is enabled - this is the hardened configuration.'
+        }
+        else {
+            writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is disabled (this setting was set on purpose). Can be considered a finding.'
+        }
+    }
+
+    # checking registry that contains security policy reprocess settings 
+    $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Group Policy\{827D319E-6EAC-11D2-A4EA-00C04F79F83A}" -Name NoGPOListChanges -ErrorAction SilentlyContinue
+    if ($temp -eq $null) {
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is not configured - settings left as default. Can be considered a finding.'
+    }
+    else {
+        if ($temp.NoGPOListChanges -eq 0) {
+            writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is enabled - this is the hardened configuration.'
+        }
+        else {
+            writeToFile -file $outputFile -path $folderLocation -str ' > GPO security policy reprocess is disabled (this setting was set on purpose). Can be considered a finding.'
+        }
+    }    
 }
 
 # Check always install elevated setting
@@ -1404,34 +1441,35 @@ function checkInstallElevated {
     writeToLog -str "running checkInstallElevated function"
     writeToScreen -str "Getting Always install with elevation setting..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Always install elevated Check ============="
-    writeToFile -file $outputFile -path $folderLocation -str "checking if GPO is configured to force installation as administrator - can be used by an attacker`r`n"
+    writeToFile -file $outputFile -path $folderLocation -str "Checking if GPO is configured to force installation as administrator - can be used by an attacker to escalate permissions."
+    writeToFile -file $outputFile -path $folderLocation -str "For more information, see: https://book.hacktricks.xyz/windows/windows-local-privilege-escalation#alwaysinstallelevated`r`n"    
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
     if($null -eq $temp){
-        writeToFile -file $outputFile -path $folderLocation -str ' > No GPO for for "Always install with elevation"'
+        writeToFile -file $outputFile -path $folderLocation -str ' > No GPO settings exist for "Always install with elevation" - this is good.'
     }
     elseif ($temp.AlwaysInstallElevated -eq 1) {
         writeToFile -file $outputFile -path $folderLocation -str ' > Always install with elevated is enabled - this is a finding!'
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str ' > GPO for "Always install with elevated" is existing but not enforcing installing with elevation'
-    }
-    
+        writeToFile -file $outputFile -path $folderLocation -str ' > GPO for "Always install with elevated" exists but not enforcing installing with elevation - this is good.'
+    }    
 }
 
-# Powershell Audit settings check
-function checkPowrshellAudit {
+# Powershell Logging settings check
+function checkPowerShellAudit {
     param (
         $name
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
-    writeToLog -str "running checkPowrshellAudit function"
-    writeToScreen -str "Getting Powershell audit policy..." -ForegroundColor Yellow
+    writeToLog -str "running checkPowershellAudit function"
+    writeToScreen -str "Getting PowerShell logging policies..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= PowerShell Audit ============="
-    writeToFile -file $outputFile -path $folderLocation -str " Powershell Audit is configured by three main settings modules, script block and transcript:"
-    writeToFile -file $outputFile -path $folderLocation -str "  - Model logging - audits the modules used in powershell commands\scripts"
-    writeToFile -file $outputFile -path $folderLocation -str "  - Script block - audits the use of script block in powershell commands\scripts"
-    writeToFile -file $outputFile -path $folderLocation -str "  - Transcript - audits the commands running in powershell"
-    writeToFile -file $outputFile -path $folderLocation -str " For comprehensive audit trail all of those need to be configured and each of them has a special setting that need to be configured to work properly (for example in module audit you need to specify witch modules to audit)`r`n"
+    writeToFile -file $outputFile -path $folderLocation -str "PowerShell Logging is configured by three main settings: Module Logging, Script Block Logging and Transcription:"
+    writeToFile -file $outputFile -path $folderLocation -str " - Module Logging - audits the modules used in PowerShell commands\scripts."
+    writeToFile -file $outputFile -path $folderLocation -str " - Script Block - audits the use of script block in PowerShell commands\scripts."
+    writeToFile -file $outputFile -path $folderLocation -str " - Transcript - audits the commands running in PowerShell."
+    writeToFile -file $outputFile -path $folderLocation -str " - For more information, see: https://www.mandiant.com/resources/greater-visibilityt"
+    writeToFile -file $outputFile -path $folderLocation -str "For comprehensive audit trail all of those need to be configured and each of them has a special setting that need to be configured to work properly (for example in Module Logging you need to specify whitch modules to audit).`r`n"
     # --- Start Of Module Logging ---
     writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Module audit: "
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -Name EnableModuleLogging -ErrorAction SilentlyContinue # registry that checks Module Logging in Computer-Space
@@ -1446,15 +1484,15 @@ function checkPowrshellAudit {
                 }
             }
             if(!$booltest){
-                writeToFile -file $outputFile -path $folderLocation -str  " > PowerShell - Module logging is enforced on all modules but only on the user"
+                writeToFile -file $outputFile -path $folderLocation -str  " > PowerShell - Module Logging is enabled on all modules but only on the user."
             }
             else{
-                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is enforced only on the user and not on all modules" 
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is enabled only on the user and not on all modules."
                 writeToFile -file $outputFile -path $folderLocation -str ($temp2 | Select-Object -ExpandProperty Property | Out-String) # getting which Module are logged in User-Space  
             } 
         }
         else {
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is not enforced"
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module Logging is not enabled."
         }
     }
     elseif($temp.EnableModuleLogging -eq 1){
@@ -1466,15 +1504,15 @@ function checkPowrshellAudit {
             }
         }
         if(!$booltest){
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is not enforced on all modules:" 
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module Logging is not enabled on all modules:" 
             writeToFile -file $outputFile -path $folderLocation -str ($temp2 | Select-Object -ExpandProperty Property | Out-String) # getting which Module are logged in User-Space  
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is enforced on all modules"
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module Logging is enabled on all modules."
         }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is Not enforced!"
+        writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is not enabled!"
     }
 
     # --- End Of Module Logging ---
@@ -1486,28 +1524,28 @@ function checkPowrshellAudit {
         if($null -ne $temp -and $temp.EnableScriptBlockLogging -eq 1){
             $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockInvocationLogging -ErrorAction SilentlyContinue # registry containing script-block Invocation logging setting - in user-space
             if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
-                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is enabled but Invocation logging is not enforced - only on user" 
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is enabled but Invocation logging is not enabled - only on user." 
             }
             else{
-                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is enforced - only on user"
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is enabled - only on user."
             }
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is not enforced"
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is not enabled!"
         }
     }
     else{
         $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -Name EnableScriptBlockInvocationLogging -ErrorAction SilentlyContinue # registry containing script-block Invocation logging setting - in computer-space
         if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is enabled but Invocation logging is not enforced"
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is enabled but Invocation logging is not."
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block logging is enabled"
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is enabled."
         }
     }
     # --- End of ScriptBlock logging
     # --- Start Transcription logging 
-    writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Transcription logging: "
+    writeToFile -file $outputFile -path $folderLocation -str "--- PowerShell Transcription logging:"
     $temp = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableTranscripting -ErrorAction SilentlyContinue # registry containing transcripting logging setting - computer-space
     $bollCheck = $false
     if($null -eq $temp -or $temp.EnableTranscripting -ne 1){
@@ -1515,38 +1553,38 @@ function checkPowrshellAudit {
         if($null -ne $temp -and $temp.EnableTranscripting -eq 1){
             $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableInvocationHeader -ErrorAction SilentlyContinue # registry containing transcripting Invocation-Header logging setting - user-space
             if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
-                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced"
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but Invocation Header logging is not."
                 $bollCheck = $True
             }
             $temp2 = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name OutputDirectory -ErrorAction SilentlyContinue # registry containing transcripting output directory logging setting - user-space
             if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
-                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enforced but no folder is set to save the log"
+                writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but no folder is set to save the log."
                 $bollCheck = $True
             }
             if(!$bollCheck){
-                writeToFile -file $outputFile -path $folderLocation -str " > Powershell - Transcription logging is enforced correctly but only on the user"
+                writeToFile -file $outputFile -path $folderLocation -str " > Powershell - Transcription logging is enabled correctly but only on the user."
                 $bollCheck = $True
             }
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is not enforced (logging input and output of powershell command)"
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is not enabled (logging input and output of PowerShell commands)."
             $bollCheck = $True
         }
     }
     else{
         $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name EnableInvocationHeader -ErrorAction SilentlyContinue # registry containing transcripting Invocation-Header logging setting - computer-space
         if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced" 
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced." 
             $bollCheck = $True
         }
         $temp2 = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -Name OutputDirectory -ErrorAction SilentlyContinue # registry containing transcripting output directory logging setting - computer-space
         if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
-            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but no folder is set to save the log" 
+            writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but no folder is set to save the log." 
             $bollCheck = $True
         }
     }
     if(!$bollCheck){
-        writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled and configured correctly" 
+        writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled and configured correctly." 
     }
     
 }
@@ -1576,14 +1614,14 @@ function dataAuditPolicy {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running dataAuditSettings function"
-    writeToScreen -str "getting audit policy settings..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Audit Policy Configuration ============="
+    writeToScreen -str "Getting audit policy configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Audit Policy configuration (auditpol /get /category:*) ============="
     if ($winVersion.Major -ge 6)
     {
         if($runningAsAdmin)
         {writeToFile -file $outputFile -path $folderLocation -str (auditpol /get /category:* | Format-Table | Out-String)}
         else{
-            writeToLog -str "Function dataAuditSettings: unable to get auditpol data not running as admin"
+            writeToLog -str "Function dataAuditSettings: unable to run auditpol command - not running as elevated admin."
         }
     }
 }
@@ -1595,18 +1633,21 @@ function checkCommandLineAudit {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkCommandLineAudit function"
-    writeToScreen -str "checking command line audit..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Command line Audit ============="
-    writeToFile -file $outputFile -path $folderLocation -str "Command line Audit tracks all commands running in the CLI"
-    writeToFile -file $outputFile -path $folderLocation -str "Supported windows is 8/2012R2 and above"
+    writeToScreen -str "Getting command line audit configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Command line process auditing ============="
+    writeToFile -file $outputFile -path $folderLocation -str "Command line process auditing tracks all commands running in the CLI."
+    writeToFile -file $outputFile -path $folderLocation -str "Supported Windows versions are 8/2012R2 and above."
+    writeToFile -file $outputFile -path $folderLocation -str "For more information, see:"
+    writeToFile -file $outputFile -path $folderLocation -str "https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/command-line-process-auditing"
+    writeToFile -file $outputFile -path $folderLocation -str "https://www.stigviewer.com/stig/windows_8_8.1/2014-04-02/finding/V-43239`n"
 
     $reg = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System\Audit" -Name "ProcessCreationIncludeCmdLine_Enabled" -ErrorAction SilentlyContinue # registry key that contains the NTLM restrictions
     if ((($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))){
         if($null -eq $reg){
-            writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured - this is bad" #using system default depends on OS version
+            writeToFile -file $outputFile -path $folderLocation -str " > Command line process auditing policy is not configured - this can be considered a finding." #using system default depends on OS version
         }
         elseif($reg.ProcessCreationIncludeCmdLine_Enabled -ne 1){
-            writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured correctly - this is bad" #using system default depends on OS version
+            writeToFile -file $outputFile -path $folderLocation -str " > Command line process auditing policy is not configured correctly - this can be considered a finding." #using system default depends on OS version
         }
         else{
             if($runningAsAdmin)
@@ -1614,20 +1655,20 @@ function checkCommandLineAudit {
                 $test = auditpol /get /category:*
                 foreach ($item in $test){
                     if($item -like "*Process Creation*No Auditing"){
-                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured correctly (Advance audit>Detailed Tracking>Process Creation is not configured)  - this is bad" 
+                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not configured correctly (Advance audit>Detailed Tracking>Process Creation is not configured) - this can be considered a finding." 
                     }
                     elseif ($item -like "*Process Creation*") {
-                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is configured correctly - this is good" 
+                        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is configured correctly - this is the hardened configuration."
                     }
                 }
             }
             else{
-                writeToLog -str "Function checkCommandLineAudit: unable to get auditpol data not running as admin cannot check setting"
+                writeToLog -str "Function checkCommandLineAudit: unable to run auditpol command to check audit policy - not running as elevated admin."
             }
         }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not supported in this OS (legacy) - this is bad" 
+        writeToFile -file $outputFile -path $folderLocation -str " > Command line audit policy is not supported in this OS (legacy version) - this is bad..." 
     }
 }
 
@@ -1638,7 +1679,7 @@ function checkLogSize {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkLogSize function"
-    writeToScreen -str "checking log size configuration..." -ForegroundColor Yellow
+    writeToScreen -str "Getting Event Log size configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= log size configuration ============="
     $applicationLogMaxSize = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\Application" -Name "MaxSize" -ErrorAction SilentlyContinue # registry key that contains the max size of log file
     $securityLogMaxSize = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\Security" -Name "MaxSize" -ErrorAction SilentlyContinue # registry key that contains the max size of log file
@@ -1646,7 +1687,7 @@ function checkLogSize {
     $systemLogMaxSize = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\System" -Name "MaxSize" -ErrorAction SilentlyContinue # registry key that contains the max size of log file
     $setupLogging = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\EventLog\Setup" -Name "Enabled" -ErrorAction SilentlyContinue # registry key that contains if setup log is enabled
 
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n==== Application"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n--- Application ---"
     if($null -ne $applicationLogMaxSize){
         
         $size = "MB"
@@ -1659,17 +1700,17 @@ function checkLogSize {
         $size = $Calc.tostring() + $size
         writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file is $size"
         if($applicationLogMaxSize.MaxSize -lt 32768){
-            writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is smaller then the recommendation (32768KB) - this is a finding"
+            writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is smaller then the recommendation (32768KB) - this is a potential finding, if logs are not collected to a central location."
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is equal or larger then (32768KB) - this is good"
+            writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file size is equal or larger then 32768KB - this is good."
         }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file is not configured the default is 1MB this is a finding"
+        writeToFile -file $outputFile -path $folderLocation -str " > Application maximum log file is not configured, the default is 1MB - this is a potential finding, if logs are not collected to a central location."
     }
 
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n==== System"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n--- System ---"
     if($null -ne $systemLogMaxSize){
         
         $size = "MB"
@@ -1681,17 +1722,17 @@ function checkLogSize {
         $size = $Calc.tostring() + $size
         writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file is $size"
         if($systemLogMaxSize.MaxSize -lt 32768){
-            writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommendation (32768KB) - this is a finding"
+            writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommendation (32768KB) - this is a potential finding, if logs are not collected to a central location."
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is equal or larger then (32768KB) - this is good"
+            writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is equal or larger then (32768KB) - this is good."
         }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file is not configured the default is 1MB this is a finding"
+        writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file is not configured, the default is 1MB - this is a potential finding, if logs are not collected to a central location."
     }
 
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n==== Security"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n--- Security ---"
     if($null -ne $securityLogMaxSize){
         
         $size = "MB"
@@ -1703,17 +1744,17 @@ function checkLogSize {
         $size = $Calc.tostring() + $size
         writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file is $size"
         if($securityLogMaxSize.MaxSize -lt 196608){
-            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is smaller then the recommendation (196608KB ) - this is a finding"
+            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is smaller then the recommendation (196608KB) - this is a potential finding, if logs are not collected to a central location."
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is equal or larger then (196608KB) - this is good"
+            writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file size is equal or larger then 196608KB - this is good."
         }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file is not configured the default is 1MB this is a finding"
+        writeToFile -file $outputFile -path $folderLocation -str " > Security maximum log file is not configured, the default is 1MB - this is a potential finding, if logs are not collected to a central location."
     }
 
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n==== Setup"
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n--- Setup ---"
     if($null -ne $setupLogMaxSize){
         if($setupLogging.Enable -eq 1){
             $size = "MB"
@@ -1725,18 +1766,18 @@ function checkLogSize {
             $size = [String]::Parse($Calc) + $size
             writeToFile -file $outputFile -path $folderLocation -str " > Setup maximum log file is $size"
             if($setupLogMaxSize.MaxSize -lt 32768){
-                writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommendation (32768KB) - this is a finding"
+                writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is smaller then the recommendation (32768KB) - this is a potential finding, if logs are not collected to a central location."
             }
             else{
-                writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is equal or larger then (32768KB) - this is good"
+                writeToFile -file $outputFile -path $folderLocation -str " > System maximum log file size is equal or larger then 32768KB - this is good."
             }
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > Setup log is not enabled"
+            writeToFile -file $outputFile -path $folderLocation -str " > Setup log is not enabled."
         }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > Setup maximum log file is not configured or enabled"
+        writeToFile -file $outputFile -path $folderLocation -str " > Setup maximum log file is not configured or enabled."
     }
 
 }
@@ -1748,20 +1789,20 @@ function checkSafeModeAcc4NonAdmin {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkSafeModeAcc4NonAdmin function"
-    writeToScreen -str "Checking if safe mode access by non-admins is blocked" -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Safe mode access by non-admins ============="
+    writeToScreen -str "Checking if safe mode access by non-admins is blocked..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Safe mode access by non-admins (SafeModeBlockNonAdmins registry value) ============="
     writeToFile -file $outputFile -path $folderLocation -str "If safe mode can be accessed by non admins there is an option of privilege escalation on this machine for an attacker - required direct access"
 
-    $reg = Get-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\Curr entVersion\Policies\System" -Name "SafeModeBlockNonAdmins" -ErrorAction SilentlyContinue # registry key that contains the safe mode restriction
+    $reg = Get-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "SafeModeBlockNonAdmins" -ErrorAction SilentlyContinue # registry key that contains the safe mode restriction
     if($null -eq $reg){
-        writeToFile -file $outputFile -path $folderLocation -str " > No hardening on Safe mode access by non admins - might be a finding"
+        writeToFile -file $outputFile -path $folderLocation -str " > No hardening on Safe mode access by non admins - may be considered a finding if you feel pedant today."
     }
     else{
         if($reg.SafeModeBlockNonAdmins -eq 1){
-            writeToFile -file $outputFile -path $folderLocation -str " > Block Safe mode access by non admins is enabled - this is a good thing"
+            writeToFile -file $outputFile -path $folderLocation -str " > Block Safe mode access by non-admins is enabled - this is a good thing."
         }
         else{
-            writeToFile -file $outputFile -path $folderLocation -str " > Block Safe mode access by non admins is Disabled - might be a finding"
+            writeToFile -file $outputFile -path $folderLocation -str " > Block Safe mode access by non-admins is disabled - may be considered a finding if you feel pedant today."
         }
     }
 }
@@ -1773,7 +1814,7 @@ function checkProxyConfiguration {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkProxyConfiguration function"
-    writeToScreen -str "Checking proxy configuration" -ForegroundColor Yellow
+    writeToScreen -str "Getting proxy configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Proxy Configuration ============="
     $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "ProxySettingsPerUser" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.ProxySettingsPerUser -eq 0){
@@ -1906,61 +1947,63 @@ function checkWinUpdateConfig{
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkWSUSConfig function"
-    writeToScreen -str "Checking WSUS configuration" -ForegroundColor Yellow
+    writeToScreen -str "Getting Windows Update configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Windows update configuration ============="
     $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoUpdate" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.NoAutoUpdate -eq 0){
-        writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is disabled - might be a finding"
+        writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is disabled - can be considered a finding."
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is enabled"
+        writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is enabled."
     }
     $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUOptions" -ErrorAction SilentlyContinue
     switch ($reg.AUOptions) {
-        2 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to notify for download and notify for install - this is bad (allows users to not update) " }
-        3 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to auto download and notify for install - this depends if this setting if this is set on servers and there is a manual process to update every month it is ok otherwise it is not recommended  " }
-        4 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to auto download and schedule the install - this is a good thing " 
+        2 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to notify for download and notify for install - this may be considered a finding (allows users to not update)." }
+        3 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to auto download and notify for install - this depends if this setting if this is set on servers and there is a manual process to update every month. If so it is OK; otherwise it is not recommended." }
+        4 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to auto download and schedule the install - this is a good thing." 
             $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ScheduledInstallDay" -ErrorAction SilentlyContinue
             if($null -ne $reg){
                 switch ($reg.ScheduledInstallDay) {
-                    0 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every day "  }
-                    1 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Sunday  "  }
-                    2 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Monday  "  }
-                    3 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Tuesday  "  }
-                    4 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Wednesday  "  }
-                    5 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Thursday "  }
-                    6 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Friday  "  }
-                    7 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to update every Saturday  "  }
+                    0 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to update every day"  }
+                    1 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to update every Sunday"  }
+                    2 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to update every Monday"  }
+                    3 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to update every Tuesday"  }
+                    4 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to update every Wednesday"  }
+                    5 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to update every Thursday"  }
+                    6 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to update every Friday"  }
+                    7 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to update every Saturday"  }
                     Default { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update day is not configured" }
                 }
             }
             $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ScheduledInstallTime" -ErrorAction SilentlyContinue
             if($null -ne $reg){
-                writeToFile -file $outputFile -path $folderLocation -str  (" > Windows Automatic update to update at " + $reg.ScheduledInstallTime + ":00")
+                writeToFile -file $outputFile -path $folderLocation -str  (" > Windows automatic update to update at " + $reg.ScheduledInstallTime + ":00")
             }
 
           }
-        5 { writeToFile -file $outputFile -path $folderLocation -str " > Windows Automatic update is configured to allow local admin to choose setting " }
-        Default {writeToFile -file $outputFile -path $folderLocation -str " > unknown windows update configuration"}
+        5 { writeToFile -file $outputFile -path $folderLocation -str " > Windows automatic update is configured to allow local admin to choose setting." }
+        Default {writeToFile -file $outputFile -path $folderLocation -str " > Unknown Windows update configuration."}
     }
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= WSUS configuration ============="
     $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "UseWUServer" -ErrorAction SilentlyContinue
     if($null -ne $reg -and $reg.UseWUServer -eq 1 ){
         $reg = Get-ItemProperty -Path "HKLM:Software\Policies\Microsoft\Windows\WindowsUpdate" -Name "WUServer" -ErrorAction SilentlyContinue
         if($null -eq $reg){
-            writeToFile -file $outputFile -path $folderLocation -str " > wsus configuration found but no server has been configured"
+            writeToFile -file $outputFile -path $folderLocation -str " > WSUS configuration found but no server has been configured."
         }
         else{
             $test = $reg.WUServer
             if($test -like "http://*"){
-                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configuration with http connection - this is bad"
+                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configured with unencrypted HTTP connection - this configuration may be vulnerable to local privilege escalation and may be considered a finding."
+                writeToFile -file $outputFile -path $folderLocation -str " > For more information, see: https://book.hacktricks.xyz/windows/windows-local-privilege-escalation#wsus"
+                writeToFile -file $outputFile -path $folderLocation -str " > Note that SCCM with Enhanced HTTP configured my be immune to this attack. For more information, see: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/enhanced-http"
                 $test = $test.Substring(7)
                 if($test.IndexOf("/") -ge 0){
                     $test = $test.Substring(0,$test.IndexOf("/"))
                 }
             }
             else{
-                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configuration with https connection - this is good"
+                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configured with HTTPS connection - this is the hardened configuration."
                 $test = $test.Substring(8)
                 if($test.IndexOf("/") -ge 0){
                     $test = $test.Substring(0,$test.IndexOf("/"))
@@ -1968,16 +2011,16 @@ function checkWinUpdateConfig{
             }
             try{
                 [IPAddress]$test | Out-Null
-                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configuration with an ip address - this might be a bad practice (using NTLM Authentication)"
+                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configured with an IP address - this might be a bad practice (using NTLM authentication)."
             }
             catch{
-                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configuration with an ip address - this might be a bad practice (using NTLM Authentication)"
+                writeToFile -file $outputFile -path $folderLocation -str " > WSUS is configurated with an IP address - this might be a bad practice (using NTLM authentication)."
             }
-            writeToFile -file $outputFile -path $folderLocation -str (" > WSUS Server is:"+ $reg.WUServer)
+            writeToFile -file $outputFile -path $folderLocation -str (" > WSUS Server is: "+ $reg.WUServer)
         }
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > no wsus configuration found"
+        writeToFile -file $outputFile -path $folderLocation -str " > No WSUS configuration found."
     }
 
 
@@ -1991,10 +2034,11 @@ function checkUnquotedSePath {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkUnquotedSePath function"
-    writeToScreen -str "Checking if the system has a service vulnerable to Unquoted path escalation attack" -ForegroundColor Yellow
+    #writeToScreen -str "Checking if the system has a service vulnerable to Unquoted path escalation attack" -ForegroundColor Yellow
+    writeToScreen -str "Checking for services vulnerable to unquoted path local privilege escalation attack" -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Unquoted path vulnerability ============="
     writeToFile -file $outputFile -path $folderLocation -str "This test is checking all services on the computer if there is a service that is not running from a quoted path and starts outside of the protected folder (i.e. Windows folder)"
-    writeToFile -file $outputFile -path $folderLocation -str "for more information about the attack: https://attack.mitre.org/techniques/T1574/009/ "
+    writeToFile -file $outputFile -path $folderLocation -str "for more information about the attack: https://attack.mitre.org/techniques/T1574/009"
     $services = Get-WmiObject win32_service | Select-Object Name, DisplayName, PathName
     $badPaths = @()
     $boolBadPath = $false
@@ -2012,7 +2056,7 @@ function checkUnquotedSePath {
         writeToFile -file $outputFile -path $folderLocation -str  ($badPaths | Out-String)
     }
     else{
-        writeToFile -file $outputFile -path $folderLocation -str " > the check did not find any service that is vulnerable to Unquoted path escalation attack"
+        writeToFile -file $outputFile -path $folderLocation -str " > The check did not find any service that is vulnerable to unquoted path escalation attack. This is good."
     }
 }
 
@@ -2023,7 +2067,7 @@ function checkSimulEhtrAndWifi {
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkSimulEhtrAndWifi function"
-    writeToScreen -str "Checking if simultaneous connection to Ethernet and wifi is possible " -ForegroundColor Yellow
+    writeToScreen -str "Checking if simultaneous connection to Ethernet and Wi-Fi is allowed..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "`r`n============= check simultaneous Ethernet and WIFI is possible ============="
     if ((($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2))) {
         writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured"
@@ -2240,11 +2284,11 @@ dataWhoAmI -name "Whoami"
 # get IP settings
 dataIpSettings -name "ipconfig"
 
-# test for internet connectivity
-checkInternetAccess -name "Internet-Connectivity"
-
 # test proxy settings
 checkProxyConfiguration -name "Internet-Connectivity"
+
+# test for internet connectivity
+checkInternetAccess -name "Internet-Connectivity"
 
 # get network connections (run-as admin is required for -b associated application switch)
 getNetCon -name "Netstat"
@@ -2260,6 +2304,9 @@ dataWinFeatures -name "Windows-Features"
 
 # get installed hotfixes (/format:htable doesn't always work)
 dataInstalledHotfixes -name "Hotfixes"
+
+# Check Windows update configuration
+checkWinUpdateConfig -name "Domain-Hardening"
 
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
 dataRunningProcess -name "Process-list"
@@ -2297,7 +2344,7 @@ dataLSAProtectionConf -name "LSA-Protection"
 # search for sensitive information (i.e. cleartext passwords) if the flag exists
 checkSensitiveInfo -name "Sensitive-Info"
 
-# get anti-virus status
+# get antivirus status
 checkAntiVirusStatus -name "Antivirus"
 
 # get Windows Firewall configuration
@@ -2328,7 +2375,7 @@ checkGPOReprocess -name "Domain-Hardening"
 checkCommandLineAudit -name "Audit-Policy"
 
 # Powershell Audit settings check
-checkPowrshellAudit -name "Audit-Policy"
+checkPowerShellAudit -name "Audit-Policy"
 
 #check log size
 checkLogSize -name "Audit-Policy"
@@ -2342,14 +2389,12 @@ checkInstallElevated -name "Domain-Hardening"
 # Check if safe mode access by non-admins is blocked
 checkSafeModeAcc4NonAdmin -name "Domain-Hardening"
 
-# Check Windows update configuration
-checkWinUpdateConfig -name "Domain-Hardening"
+# Check if there is hardening preventing user from connecting to multiple networks simultaneous 
+checkSimulEhtrAndWifi -name "Domain-Hardening"
 
 # get various system info (can take a few seconds)
 dataSystemInfo -name "Systeminfo"
 
-# Check if there is hardening preventing user from connecting to multiple networks simultaneous 
-checkSimulEhtrAndWifi -name "Domain-Hardening"
 
 #########################################################
 
