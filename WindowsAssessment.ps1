@@ -29,15 +29,16 @@ $Version = "1.28" # used for logging purposes
 - Add check for storage of passwords? https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376
 - Check AV/Defender configuration also on non-Windows 10/11, but on Windows Server
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
-- Check Macro and DDE (OLE) settings
+- Check Macro and DDE (OLE) settings (in progress)
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Enhance internet connectivity checks (use proxy configuration) - need to check proxy settings on multiple types of deployments 
-- Check for Lock with screen saver after time-out (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
-- Check for Device Control (GPO or dedicated software)
+- Check for Lock with screen saver after time-out? (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
+- Check for Device Control? (GPO or dedicated software)
 - Add more hardening checks from here: https://adsecurity.org/?p=3299
 - Add more hardening checks from here: https://docs.microsoft.com/en-us/windows/security/threat-protection/overview-of-threat-mitigations-in-windows-10
 - Add more hardening checks from here: https://twitter.com/dwizzzleMSFT/status/1511368944380100608
+- Add more ideas from Microsoft's Attack Surface Analyzer: https://github.com/Microsoft/AttackSurfaceAnalyzer
 - Add more settings from hardening docs
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
 
