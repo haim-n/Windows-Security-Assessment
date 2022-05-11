@@ -1,11 +1,10 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.29" # used for logging purposes
+$Version = "1.30" # used for logging purposes
 ###########################################################
 <# TODO:
-- Output the results to a single file with a simple table
-- Add OS version into the output file name (for example, "SERVERNAME_Win2008R2")
+- Output the results to a single file with a simple table - in progress (only for checks functions)  -
 - Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
 - Check for bugs in the SMB1 check - fixed need to check
 - Debug the FirewallProducts check
@@ -14,12 +13,11 @@ $Version = "1.29" # used for logging purposes
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
 - Add amsi test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
-- Move lists (like processes or services) to CSV format instead of TXT
-- Consider seperating the Domain-Hardening output files - checks aren't related
+- Move lists (like processes or services) to CSV format instead of TXT - in progress
+- Consider separating the Domain-Hardening output files - checks aren't related
 - Ensure that the internet connectivity check (curl over HTTP/S) proxy aware
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
--- Check Kerberos encryption algorithms
 -- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
@@ -86,7 +84,7 @@ Controls Checklist:
 - WPAD is not in use, proxy is configured according to network's architecture (Internet-Connectivity file)
 - Macros are restricted (gpresult file, currently WIP)
 - No ability to connect to Wi-Fi while connected to wired network (Domain-Hardening file)
-
+- supported Kerberos encryption algorithms (Domain-Hardening file)
 ##########################################################
 @Haim Nachmias @Nital Ruzin
 ##########################################################>
@@ -131,6 +129,7 @@ function writeToLog {
     writeToFile -path $folderLocation -file "Log_$folderLocation.txt" -str $logMessage
 }
 
+#Generate file name based on convention
 function getNameForFile{
     param(
         $name,
@@ -173,7 +172,7 @@ function getRegValue {
     
 }
 
-#add result to array
+#add result to array - To be exported to CSV 
 function addToCSV {
     #isACheck is not mandatory default is true
     param (
@@ -231,11 +230,19 @@ function dataIpSettings {
     param (
         $name 
     )
-    $outputFile = getNameForFile -name $name -extension ".txt"
+    
     writeToScreen -str "Running ipconfig..." -ForegroundColor Yellow
     writeToLog -str "running DataIpSettings function"
-    writeToFile -file $outputFile -path $folderLocation -str "`Output of `"ipconfig /all`" command:`r`n" 
-    writeToFile -file $outputFile -path $folderLocation -str (ipconfig /all) 
+    if($psVer -ge 4){
+        $outputFile = getNameForFile -name $name -extension ".csv"
+        Get-NetIPConfiguration | Select-object InterfaceDescription -ExpandProperty AllIPAddresses | Export-CSV -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
+    }
+    else{
+        $outputFile = getNameForFile -name $name -extension ".txt"
+        writeToFile -file $outputFile -path $folderLocation -str "`Output of `"ipconfig /all`" command:`r`n" 
+        writeToFile -file $outputFile -path $folderLocation -str (ipconfig /all) 
+    }
+    
 }
 
 # get network connections (run-as admin is required for -b associated application switch)
@@ -243,13 +250,19 @@ function getNetCon {
     param (
         $name
     )
-    $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running getNetCon function"
     writeToScreen -str "Running netstat..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "============= netstat -nao ============="
-    writeToFile -file $outputFile -path $folderLocation -str (netstat -nao)
-    writeToFile -file $outputFile -path $folderLocation -str "============= netstat -naob (includes process name, elevated admin permission is required ============="
-    writeToFile -file $outputFile -path $folderLocation -str (netstat -naob)
+    if($psVer -ge 4){
+        $outputFile = getNameForFile -name $name -extension ".csv"
+        Get-NetTCPConnection | Select-Object local*,remote*,state,AppliedSetting,OwningProcess,@{Name="Process";Expression={(Get-Process -Id $_.OwningProcess).ProcessName}} | Export-CSV -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
+    }
+    else{
+        $outputFile = getNameForFile -name $name -extension ".txt"
+        writeToFile -file $outputFile -path $folderLocation -str "============= netstat -nao ============="
+        writeToFile -file $outputFile -path $folderLocation -str (netstat -nao)
+        writeToFile -file $outputFile -path $folderLocation -str "============= netstat -naob (includes process name, elevated admin permission is required ============="
+        writeToFile -file $outputFile -path $folderLocation -str (netstat -naob)
+    }
 # "============= netstat -ao  =============" | Out-File $outputFileName  -Append
 # netstat -ao | Out-File $outputFileName -Append  # shows server names, but takes a lot of time and not very important
 }
@@ -311,7 +324,8 @@ function dataSecurityPolicy {
     }
 }
 
-# get windows features (Windows vista/2008 or above is required)
+# get windows features (Windows vista/2008 or above is required) 
+#adding CSV Support until hare (going down)
 function dataWinFeatures {
     param (
         $name
@@ -2728,9 +2742,24 @@ if($psVer -ge 4){
 
 # compress the files to a zip. works for PowerShell 5.0 (Windows 10/2016) only. sometimes the compress fails because the file is still in use.
 if($psVer -ge 5){
-    Compress-Archive -Path $folderLocation\* -DestinationPath ($folderLocation+".zip") -Force -ErrorAction SilentlyContinue
-    Remove-Item -Recurse -Force -Path $hostname -ErrorAction SilentlyContinue
-    writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
+    $fullPath = Get-Location
+    $fullPath = $fullPath.path
+    $fullPath += "\"+$folderLocation
+    $zipLocation = $fullPath+".zip"
+    if(Test-Path $zipLocation){
+        Remove-Item -Force -Path $zipLocation
+    }
+    Compress-Archive -Path $folderLocation\* -DestinationPath $zipLocation -Force -ErrorAction SilentlyContinue
+    if(Test-Path $zipLocation){
+        Remove-Item -Recurse -Force -Path $folderLocation -ErrorAction SilentlyContinue
+        writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
+    }
+    else{
+        writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
+        writeToLog -str "failed to create a zip file unknown reason"
+    }
+    
+    
 }
 elseif ($psVer -eq 4 ) {
         $fullPath = Get-Location
@@ -2742,8 +2771,14 @@ elseif ($psVer -eq 4 ) {
         }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::CreateFromDirectory($fullPath,$zipLocation)
-        Remove-Item -Recurse -Force -Path $hostname -ErrorAction SilentlyContinue
-        writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
+        if(Test-Path $zipLocation){
+            Remove-Item -Recurse -Force -Path $folderLocation -ErrorAction SilentlyContinue
+            writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
+        }
+        else{
+            writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
+            writeToLog -str "failed to create a zip file unknown reason"
+        }
 }
 else{
     writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
