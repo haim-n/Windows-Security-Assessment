@@ -6,7 +6,7 @@ $Version = "1.30" # used for logging purposes
 <# TODO:
 - Output the results to a single file with a simple table - in progress (only for checks functions)  -
 - Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
-- Check for bugs in the SMB1 check - fixed need to check
+- Check for bugs in the SMB1 check - fixed need to check.
 - Debug the FirewallProducts check
 - Debug the RDP check on multiple OS versions
 - Add check into NetSessionEnum to see whether running on a DC
