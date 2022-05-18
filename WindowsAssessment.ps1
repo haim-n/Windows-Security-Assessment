@@ -12,12 +12,13 @@ $Version = "1.28" # used for logging purposes
 - Debug the RDP check on multiple OS versions
 - Add check into NetSessionEnum to see whether running on a DC
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
-- Add amsi test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
+- Add AMSI test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Move lists (like processes or services) to CSV format instead of TXT
 - Consider seperating the Domain-Hardening output files - checks aren't related
 - Ensure that the internet connectivity check (curl over HTTP/S) proxy aware
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
+-- Determine LDAP Signing and Channel Binding (https://4sysops.com/archives/secure-domain-controllers-with-ldap-channel-binding-and-ldap-signing)
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
 -- Check Kerberos encryption algorithms
 -- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
@@ -67,6 +68,8 @@ Controls Checklist:
 - Local users are all disabled or have their password rotated (Local-Users file) or cannot connect over the network (Security-Policy inf file: Deny access to this computer from the network)
 - Group policy settings are reapplied even when not changed (Domain-Hardening file, or gpresult file: Administrative Templates > System > Group Policy > Configure registry policy processing)
 - Only AES encryption is allowed for Kerberos, especially on Domain Controllers (Security-Policy inf file: Network security: Configure encryption types allowed for Kerberos, admin needed)
+- LDAP Signing is required on Domain Controllers (GPResult/Security-Policy: "Domain controller: LDAP server signing requirements" set to "Require signing")
+- LDAP Channel Binding is required on Domain Controllers (GPResult/Security-Policy: "Domain controller: LDAP server channel binding token requirements" set to "Always")
 - Credential delegation is not configured or disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
 - Local administrators group is configured as a restricted group with fixed members (Security-Policy inf file: Restricted Groups, admin needed, low priority)
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
