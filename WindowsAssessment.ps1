@@ -596,18 +596,24 @@ function dataWinFirewall {
             writeToFile -file $outputFile -path $folderLocation -str (Get-NetFirewallProfile -PolicyStore ActiveStore | Out-String)   
             writeToFile -file $outputFile -path $folderLocation -str "----------------------------------`r`n"
             writeToFile -file $outputFile -path $folderLocation -str "The output of Get-NetFirewallRule can be found in the Windows-Firewall-Rules CSV file. No port and IP information there."
-            $temp = $folderLocation + "\" + (getNameForFile -name $name -extension ".csv")
-            #Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $temp -NoTypeInformation - removed replaced by Nir's Offer
-            writeToLog -str "Function dataWinFirewall: Exporting to CSV"
-            Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object { $_.Enabled -eq $True } | Select-Object -Property PolicyStoreSourceType, Name, DisplayName, DisplayGroup,
-            @{Name='Protocol';Expression={($PSItem | Get-NetFirewallPortFilter).Protocol}},
-            @{Name='LocalPort';Expression={($PSItem | Get-NetFirewallPortFilter).LocalPort}},
-            @{Name='RemotePort';Expression={($PSItem | Get-NetFirewallPortFilter).RemotePort}},
-            @{Name='RemoteAddress';Expression={($PSItem | Get-NetFirewallAddressFilter).RemoteAddress}},
-            @{Name='Service';Expression={($PSItem | Get-NetFirewallServiceFilter).Service}},
-            @{Name='Program';Expression={($PSItem | Get-NetFirewallApplicationFilter).Program}},
-            @{Name='Package';Expression={($PSItem | Get-NetFirewallApplicationFilter).Package}},
-            Enabled, Profile, Direction, Action | export-csv -NoTypeInformation $temp
+            if($runningAsAdmin){
+                    
+                $temp = $folderLocation + "\" + (getNameForFile -name $name -extension ".csv")
+                #Get-NetFirewallRule -PolicyStore ActiveStore | Export-Csv $temp -NoTypeInformation - removed replaced by Nir's Offer
+                writeToLog -str "Function dataWinFirewall: Exporting to CSV"
+                Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object { $_.Enabled -eq $True } | Select-Object -Property PolicyStoreSourceType, Name, DisplayName, DisplayGroup,
+                @{Name='Protocol';Expression={($PSItem | Get-NetFirewallPortFilter).Protocol}},
+                @{Name='LocalPort';Expression={($PSItem | Get-NetFirewallPortFilter).LocalPort}},
+                @{Name='RemotePort';Expression={($PSItem | Get-NetFirewallPortFilter).RemotePort}},
+                @{Name='RemoteAddress';Expression={($PSItem | Get-NetFirewallAddressFilter).RemoteAddress}},
+                @{Name='Service';Expression={($PSItem | Get-NetFirewallServiceFilter).Service}},
+                @{Name='Program';Expression={($PSItem | Get-NetFirewallApplicationFilter).Program}},
+                @{Name='Package';Expression={($PSItem | Get-NetFirewallApplicationFilter).Package}},
+                Enabled, Profile, Direction, Action | export-csv -NoTypeInformation $temp
+                }
+            else{
+                writeToLog -str "Function dataWinFirewall: Not running as administrator not exporting to CSV (Get-NetFirewallRule requires admin permissions)"
+            }
         }
         else{
             writeToLog -str "Function dataWinFirewall: unable to run NetFirewall commands - skipping (old OS \ powershell is below 4)"
@@ -1077,6 +1083,7 @@ function checkRDPSecurity {
 }
 
 # search for sensitive information (i.e. cleartext passwords) if the flag exists
+# check is not compatible with checks.csv format (Not a boolean result)
 function checkSensitiveInfo {
     param (
         $name
@@ -1217,6 +1224,7 @@ function checkAntiVirusStatus {
     }
 }
 
+# partial support for csv export (NetBIOS final check need conversion)
 # check if LLMNR and NETBIOS-NS are enabled
 function checkLLMNRAndNetBIOS {
     param (
@@ -1228,7 +1236,7 @@ function checkLLMNRAndNetBIOS {
     writeToScreen -str "Getting LLMNR and NETBIOS-NS configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= LLMNR Configuration ============="
     writeToFile -file $outputFile -path $folderLocation -str "GPO Setting: Computer Configuration -> Administrative Templates -> Network -> DNS Client -> Enable Turn Off Multicast Name Resolution"
-    $LLMNR = Get-ItemProperty "HKLM:\Software\policies\Microsoft\Windows NT\DNSClient" EnableMulticast -ErrorAction SilentlyContinue
+    $LLMNR = getRegValue -HKLM $true -regPath "\Software\policies\Microsoft\Windows NT\DNSClient" -regName "EnableMulticast"
     $LLMNR_Enabled = $LLMNR.EnableMulticast
     writeToFile -file $outputFile -path $folderLocation -str "Registry Setting: `"HKLM:\Software\policies\Microsoft\Windows NT\DNSClient`" -> EnableMulticast = $LLMNR_Enabled"
     if ($LLMNR_Enabled -eq 0)
@@ -1237,7 +1245,8 @@ function checkLLMNRAndNetBIOS {
         {writeToFile -file $outputFile -path $folderLocation -str "LLMNR is enabled, which is a finding, especially for workstations."}
         writeToFile -file $outputFile -path $folderLocation -str "============= NETBIOS Name Service Configuration ============="
         writeToFile -file $outputFile -path $folderLocation -str "Checking the NETBIOS Node Type configuration - see 'https://getadmx.com/?Category=KB160177#' for details...`r`n"
-    $NodeType = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Services\NetBT\Parameters" NodeType -ErrorAction SilentlyContinue).NodeType
+        
+    $NodeType = (getRegValue -HKLM $true -regPath "\System\CurrentControlSet\Services\NetBT\Parameters" -regName "NodeType").NodeType
     if ($NodeType -eq 2)
         {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server), which is secure."}
     else
@@ -1256,39 +1265,49 @@ function checkLLMNRAndNetBIOS {
         writeToFile -file $outputFile -path $folderLocation -str "NetbiosOptions=1 is enabled, which is not secure and a possible finding."
         writeToFile -file $outputFile -path $folderLocation -str "NetbiosOptions=2 is disabled, which is secure."
         writeToFile -file $outputFile -path $folderLocation -str "If NetbiosOptions is set to 2 for the main interface, NetBIOS Name Service is protected against poisoning attacks even though the NodeType is not set to P-node, and this is not a finding."
-        $interfaces = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_*" NetbiosOptions -ErrorAction SilentlyContinue
+        $interfaces = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_*" -regName "NetbiosOptions"
         writeToFile -file $outputFile -path $folderLocation -str ($interfaces | Select-Object PSChildName,NetbiosOptions | Out-String)
     }
     
 }
 
+# added csv support + reg check function until here - going up
 # check if cleartext credentials are saved in lsass memory for WDigest
 function checkWDigest {
     param (
         $name
     )
+
     # turned on by default for Win7/2008/8/2012, to fix it you must install kb2871997 and than fix the registry value below
     # turned off by default for Win8.1/2012R2 and above
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkWDigest function"
     writeToScreen -str "Getting WDigest credentials configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= WDigest Configuration ============="
-    $WDigest = Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" UseLogonCredential -ErrorAction SilentlyContinue
+    $WDigest = getRegValue -HKLM $true -regPath "\System\CurrentControlSet\Control\SecurityProviders\WDigest" -regName "UseLogonCredential"
     if ($null -eq $WDigest)
     {
         writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry value wasn't found."
         # check if running on Windows 6.3 or above
         if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
-            {writeToFile -file $outputFile -path $folderLocation -str  "The WDigest protocol is turned off by default for Win8.1/2012R2 and above. So it is OK, but still recommended to set the UseLogonCredential registry value to 0, to revert malicious attempts of enabling WDigest."}
+            {
+                writeToFile -file $outputFile -path $folderLocation -str  "The WDigest protocol is turned off by default for Win8.1/2012R2 and above. So it is OK, but still recommended to set the UseLogonCredential registry value to 0, to revert malicious attempts of enabling WDigest."
+                addToCSV -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in lsas" -checkID "domain_WDigest" -problem $false -comment "The WDigest protocol is turned off by default for Win8.1/2012R2 and above."  
+            }
         else
         {
             # check if running on Windows 6.1/6.2, which can be hardened, or on older version
             if (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 1))    
-                {writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding."}
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding."
+                    addToCSV -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in lsas" -checkID "domain_WDigest" -problem $true -comment "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012."  
+                }
             else
             {
                 writeToFile -file $outputFile -path $folderLocation -str "The operating system version is not supported. You have worse problems than WDigest configuration."
                 writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS."
+                addToCSV -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in lsas" -checkID "domain_WDigest" -problem $true -comment "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS."  
+
             }
         }
     }
@@ -1298,19 +1317,21 @@ function checkWDigest {
         {
             writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry key set to 0."
             writeToFile -file $outputFile -path $folderLocation -str "WDigest doesn't store cleartext user credentials in memory, which is good. The setting was intentionally hardened."
+            addToCSV -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in lsas" -checkID "domain_WDigest" -problem $false -comment "WDigest doesn't store cleartext user credentials in memory"  
+
         }
         if ($WDigest.UseLogonCredential -eq 1)
         {
             writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry key set to 1."
             writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory, which is bad and a finding. The configuration was either intentionally configured by an admin for some reason, or was set by a threat actor to fetch clear-text credentials."
+            addToCSV -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in lsas" -checkID "domain_WDigest" -problem $true -comment "WDigest stores cleartext user credentials in memory"  
         }
     }
     
 }
 
-# added csv support + reg check function until here - going up
 # check for Net Session enumeration permissions
-# cannot be converted to a check function (will not be showed in the checks csv)
+# cannot be converted to a check function (will not be showed in the checks csv) - aka function need to be recreated 
 function checkNetSessionEnum {
     param (
         $name
