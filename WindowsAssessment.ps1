@@ -1,10 +1,10 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.31" # used for logging purposes
+$Version = "1.33" # used for logging purposes
 ###########################################################
 <# TODO:
-- Output the results to a single file with a simple table - in progress (only for checks functions)
+- Output the results to a single file with a simple table - in validation
 - Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
 - Check for bugs in the SMB1 check - fixed need to check
 - Debug the FirewallProducts check
@@ -686,31 +686,51 @@ function checkCredentialGuard {
         $DevGuard = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard
         writeToFile -file $outputFile -path $folderLocation -str "============= Credential Guard Settings from WMI ============="
         if ($null -eq $DevGuard.SecurityServicesConfigured)
-            {writeToFile -file $outputFile -path $folderLocation -str "The WMI query for Device Guard settings has failed. Status unknown."}
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "The WMI query for Device Guard settings has failed. Status unknown."
+                addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-wmi" -problem "UNKNOWN" -comment "WMI query for Device Guard settings has failed" 
+            }
         else {
             if (($DevGuard.SecurityServicesConfigured -contains 1) -and ($DevGuard.SecurityServicesRunning -contains 1))
-            {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is configured and running. Which is good."}
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is configured and running. Which is good."
+                addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-wmi" -problem $false -comment "Credential Guard is configured and running" 
+            }
         else
-            {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."}    
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."
+                addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-wmi" -problem $true -comment "Credential Guard is turned off" 
+        }    
         }
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw Device Guard Settings from WMI (Including Credential Guard) ============="
         writeToFile -file $outputFile -path $folderLocation -str ($DevGuard | Out-String)
         $DevGuardPS = Get-ComputerInfo dev*
         writeToFile -file $outputFile -path $folderLocation -str "============= Credential Guard Settings from Get-ComputerInfo ============="
         if ($null -eq $DevGuardPS.DeviceGuardSecurityServicesRunning)
-            {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."}
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."
+                addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-PS" -problem $true -comment "Credential Guard is turned off" 
+        }
         else
         {
             if ($null -ne ($DevGuardPS.DeviceGuardSecurityServicesRunning | Where-Object {$_.tostring() -eq "CredentialGuard"}))
-                {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is configured and running. Which is good."}
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is configured and running. Which is good."
+                    addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-PS" -problem $false -comment "Credential Guard is configured and running" 
+                }
             else
-                {writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."}
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."
+                    addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-PS" -problem $true -comment "Credential Guard is turned off" 
+                }
         }
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw Device Guard Settings from Get-ComputerInfo ============="
         writeToFile -file $outputFile -path $folderLocation -str ($DevGuardPS | Out-String)
     }
     else{
         writeToLog -str "Function checkCredentialGuard: not supported OS no check is needed..."
+        addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-PS" -problem $true -comment "OS not supporting Credential Guard" 
+        addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-wmi" -problem $true -comment "OS not supporting Credential Guard" 
     }
     
 }
@@ -725,20 +745,31 @@ function checkLSAProtectionConf {
     if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
     {
         writeToScreen -str "Getting LSA protection settings..." -ForegroundColor Yellow
-        $RunAsPPL = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" RunAsPPL -ErrorAction SilentlyContinue
+        $RunAsPPL = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Control\Lsa" -regName "RunAsPPL"
         if ($null -eq $RunAsPPL)
-            {writeToFile -file $outputFile -path $folderLocation -str "RunAsPPL registry value does not exists. LSA protection is off . Which is bad and a possible finding."}
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "RunAsPPL registry value does not exists. LSA protection is off . Which is bad and a possible finding."
+                addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - PPL" -checkID "machine_LSA-ppl" -problem $true -comment "RunAsPPL registry value does not exists. LSA protection is off" 
+            }
         else
         {
             writeToFile -file $outputFile -path $folderLocation -str ("RunAsPPL registry value is: " +$RunAsPPL.RunAsPPL )
             if ($RunAsPPL.RunAsPPL -eq 1)
-                {writeToFile -file $outputFile -path $folderLocation -str "LSA protection is on. Which is good."}
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "LSA protection is on. Which is good."
+                    addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - PPL" -checkID "machine_LSA-ppl" -problem $false -comment "LSA protection is on" 
+
+                }
             else
-                {writeToFile -file $outputFile -path $folderLocation -str "LSA protection is off. Which is bad and a possible finding."}
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "LSA protection is off. Which is bad and a possible finding."
+                    addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - PPL" -checkID "machine_LSA-ppl" -problem $true -comment "LSA protection is off (PPL)" 
+            }
         }
     }
     else{
         writeToLog -str "Function checkLSAProtectionConf: not supported OS no check is needed"
+        addToCSV -category "Machine Hardening - Authentication" -checkName "LSA Protection - PPL" -checkID "machine_LSA-ppl" -problem $true -comment "OS is not supporting LSA protection (PPL)" 
     }
 }
 
@@ -753,6 +784,9 @@ function checkInternetAccess{
     writeToFile -file $outputFile -path $folderLocation -str "============= ping -n 2 8.8.8.8 =============" 
     writeToFile -file $outputFile -path $folderLocation -str (ping -n 2 8.8.8.8)
     writeToFile -file $outputFile -path $folderLocation -str "============= DNS request for 8.8.8.8 =============" 
+    $naOutput =""
+    $naStdPorts = $false
+    $naNStdPorts = $false
     if($psVer -ge 4)
     {
         $test = Resolve-DnsName -Name google.com -Server 8.8.8.8 -QuickTimeout -NoIdn -ErrorAction SilentlyContinue
@@ -760,23 +794,28 @@ function checkInternetAccess{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server was successful. This may be considered a finding, at least on servers."
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
             writeToFile -file $outputFile -path $folderLocation -str ($test | Out-String)
+            addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -problem $true -comment "public DNS is accessible" 
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server received a timeout. This is generally good - direct access to internet DNS isn't allowed."
+            addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -problem $false -comment "public DNS is not accessible" 
         }
     }
     else{
         $result = nslookup google.com 8.8.8.8
         if ($result -like "*DNS request timed out*"){
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server received a timeout. This is generally good - direct access to internet DNS isn't allowed."
+            addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -problem $false -comment "public DNS is not accessible" 
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server didn't receive a timeout. This may be considered a finding, at least on servers."
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
             writeToFile -file $outputFile -path $folderLocation -str ($result | Out-String)
+            addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -problem $true -comment "public DNS is accessible" 
         }
     }
     if($psVer -ge 4){
+        
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net =============" 
         $test = $null
         try{
@@ -788,13 +827,17 @@ function checkInternetAccess{
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > Port 80 is open for outbound internet access. This may be considered a finding, at least on servers." 
+                $naOutput += "Port 80: Open"
+                $naStdPorts = $true
             }
             else {
                 $str = " > test received http code: "+$test.StatusCode+" Port 80 outbound access to internet failed - Firewall URL filtering might block this test."
-                writeToFile -file $outputFile -path $folderLocation -str $str  
+                writeToFile -file $outputFile -path $folderLocation -str $str 
+                $naOutput += "Port 80: Blocked" 
             }
         }
         else{
+            $naOutput += "Port 80: Blocked" 
             writeToFile -file $outputFile -path $folderLocation -str " > Port 80 outbound access to internet failed - received a time out."
         }
 
@@ -810,14 +853,18 @@ function checkInternetAccess{
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > Port 443 is open for outbound internet access. This may be considered a finding, at least on servers." 
+                $naOutput += "`nPort 443: Open"
+                $naStdPorts = $true
             }
             else {
                 $str = " > test received http code: "+$test.StatusCode+" Port 443 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
+                $naOutput += "`nPort 443: Blocked"
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Port 443 outbound access to internet failed - received a time out."
+            $naOutput += "`nPort 443: Blocked"
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:666 =============" 
@@ -831,14 +878,18 @@ function checkInternetAccess{
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > Port 666 is open for outbound internet access. This may be considered a finding, at least on servers." 
+                $naOutput += "`nPort 663: Open"
+                $naNStdPorts = $true
             }
             else {
                 $str = " > test received http code: "+$test.StatusCode+" Port 666 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
+                $naOutput += "`nPort 663: Blocked"
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Port 666 outbound access to internet failed - received a time out."
+            $naOutput += "`nPort 663: Blocked"
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:8080 =============" 
@@ -853,19 +904,36 @@ function checkInternetAccess{
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > Port 8080 is open for outbound internet access. This may be considered a finding, at least on servers." 
+                $naOutput += "`nPort 8080: Open"
+                $naNStdPorts = $true
             }
             else {
                 $str = " > test received http code: "+$test.StatusCode+" Port 8080 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
+                $naOutput += "`nPort 8080: Blocked"
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Port 8080 outbound access to internet failed - received a time out."
+            $naOutput += "`nPort 8080: Blocked"
+        }
+        if($naStdPorts -and $naNStdPorts){
+            addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -problem $true -comment "All ports are open for this machine: $naOutput" 
+        }
+        elseif ($naStdPorts){
+            addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -problem "UNKNOWN" -comment "Standard ports (e.g., 80,443) are open for this machine (bad for servers ok for workstations): $naOutput" 
+        }
+        elseif ($naNStdPorts){
+            addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -problem $true -comment "None standard ports are open (maybe miss configuration?) for this machine (bad for servers ok for workstations): $naOutput" 
+        }
+        else{
+            addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -problem $false -comment "All browsing ports seem to be closed: $naOutput" 
         }
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str "PowerShell is lower then version 4. Other checks are not supported."
         writeToLog -str "Function checkInternetAccess: PowerShell executing the script does not support curl command. Skipping network connection test."
+        addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -problem "UNKNOWN" -comment "PowerShell executing the script does not support curl command. (e.g., PSv3 and below)" 
     }
     <#
     # very long test - skipping it for now 
@@ -873,6 +941,7 @@ function checkInternetAccess{
     writeToFile -file $outputFile -path $folderLocation -str (tracert -d -h 10 -w 50 8.8.8.8)
     #>
 }
+
 
 # check SMB protocol hardening
 function checkSMBHardening {
@@ -886,13 +955,18 @@ function checkSMBHardening {
     # Check if Windows Vista/2008 or above and powershell version 4 and up 
     if ($winVersion.Major -ge 6)
     {
-        
-        $SMB1 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB1 -ErrorAction SilentlyContinue
-        $SMB2 = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters SMB2 -ErrorAction SilentlyContinue
+        $SMB1 = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -regName "SMB1"
+        $SMB2 = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -regName "SMB2" 
         if ($SMB1.SMB1 -eq 0)
-            {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is not supported (based on registry values). Which is nice." }
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is not supported (based on registry values). Which is nice." 
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB1" -checkID "domain_SMBv1" -problem $false -comment "SMB1 Server is not supported" 
+            }
         else
-            {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is supported (based on registry values). Which is pretty bad and a finding." }
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is supported (based on registry values). Which is pretty bad and a finding." 
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB1" -checkID "domain_SMBv1" -problem $true -comment "SMB1 Server is supported (based on registry values)" 
+            }
         # unknown var will all return false always
         <#
         if (!$smbConfig.EnableSMB1Protocol) 
@@ -902,16 +976,28 @@ function checkSMBHardening {
             writeToFile -file $outputFile -path $folderLocation -str "---------------------------------------" 
         #>
         if ($SMB2.SMB2 -eq 0)
-            {writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are not supported (based on registry values). Which is weird, but not a finding." }
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are not supported (based on registry values). Which is weird, but not a finding." 
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-reg" -problem $true -comment "SMB2 and SMB3 Server are not supported (based on registry values)" 
+            }
         else
-            {writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are supported (based on registry values). Which is OK." }
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are supported (based on registry values). Which is OK."
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-reg" -problem $false -comment "SMB2 and SMB3 Server are supported" 
+             }
         if($psVer -ge 4){
             $smbServerConfig = Get-SmbServerConfiguration
             $smbClientConfig = Get-SmbClientConfiguration
             if (!$smbServerConfig.EnableSMB2Protocol)
-                {writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is not supported (based on Get-SmbServerConfiguration). Which is weird, but not a finding." }
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is not supported (based on Get-SmbServerConfiguration). Which is weird, but not a finding." 
+                    addToCSV -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -problem $true -comment "SMB2 Server is not supported (based on powershell)" 
+                }
             else
-                {writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is supported (based on Get-SmbServerConfiguration). Which is OK." }
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is supported (based on Get-SmbServerConfiguration). Which is OK." 
+                    addToCSV -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -problem $false -comment "SMB2 Server is supported" 
+                }
         }
         
     }
@@ -919,6 +1005,7 @@ function checkSMBHardening {
     {
         writeToFile -file $outputFile -path $folderLocation -str "Old Windows versions (XP or 2003) support only SMB1." 
         writeToLog -str "Function checkSMBHardening: unable to run windows too old"
+        addToCSV -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -problem $true -comment "Old Windows versions (XP or 2003) support only SMB1" 
     }
     writeToFile -file $outputFile -path $folderLocation -str "============= SMB versions Support (Client Settings) ============="
     # Check if Windows Vista/2008 or above
@@ -927,24 +1014,42 @@ function checkSMBHardening {
         $SMB1Client = (sc.exe qc lanmanworkstation | Where-Object {$_ -like "*START_TYPE*"}).split(":")[1][1]
         Switch ($SMB1Client)
         {
-            "0" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Boot'. Which is weird. Disabled is better." }
-            "1" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'System'. Which is not weird. although disabled is better."}
-            "2" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Automatic' (Enabled). Which is not very good, a possible finding, but not a must."}
-            "3" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Manual' (Turned off, but can be started). Which is pretty good, although disabled is better."}
-            "4" {writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Disabled'. Which is nice."}
+            "0" {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Boot'. Which is weird. Disabled is better." 
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -problem $true -comment "SMB1 Client is set to 'Boot'" 
+            }
+            "1" {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'System'. Which is not weird. although disabled is better."
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -problem $true -comment "SMB1 Client is set to 'System'" 
+            }
+            "2" {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Automatic' (Enabled). Which is not very good, a possible finding, but not a must."
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -problem $true -comment "SMB1 Client is set to 'Automatic' (Enabled)" 
+            }
+            "3" {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Manual' (Turned off, but can be started). Which is pretty good, although disabled is better."
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -problem $false -comment "SMB1 Client is set to 'Manual' (Turned off, but can be started)" 
+            }
+            "4" {
+                writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Disabled'. Which is nice."
+                addToCSV -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -problem $false -comment "SMB1 Client is set to 'Disabled'" 
+            }
         }
     }
     else
     {
         writeToFile -file $outputFile -path $folderLocation -str "Old Windows versions (XP or 2003) support only SMB1."
+        addToCSV -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -problem $true -comment "Old Windows versions (XP or 2003) support only SMB1" 
     }
     writeToFile -file $outputFile -path $folderLocation -str "============= SMB Signing (Server Settings) ============="
-    $SmbServerRequireSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters RequireSecuritySignature
-    $SmbServerSupportSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters EnableSecuritySignature
+    $SmbServerRequireSigning = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -regName "RequireSecuritySignature"
+    $SmbServerSupportSigning = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -regName "EnableSecuritySignature"
     if ($SmbServerRequireSigning.RequireSecuritySignature -eq 1)
     {
         writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (always) = Enabled"
         writeToFile -file $outputFile -path $folderLocation -str "SMB signing is required by the server, Which is good." 
+        addToCSV -category "Domain Hardening - SMB" -checkName "SMB2 - Server signing" -checkID "domain_SMBv1-srvSign" -problem $false -comment "SMB signing is required by the server" 
+
     }
     else
     {
@@ -953,12 +1058,14 @@ function checkSMBHardening {
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (always) = Disabled" 
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (if client agrees) = Enabled"
             writeToFile -file $outputFile -path $folderLocation -str "SMB signing is enabled by the server, but not required. Clients of this server are susceptible to man-in-the-middle attacks, if they don't require signing. A possible finding."
+            addToCSV -category "Domain Hardening - SMB" -checkName "SMB2 - Server signing" -checkID "domain_SMBv1-srvSign" -problem $true -comment "SMB signing is enabled by the server, but not required" 
         }
         else
         {
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (always) = Disabled." 
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (if client agrees) = Disabled." 
             writeToFile -file $outputFile -path $folderLocation -str "SMB signing is disabled by the server. Clients of this server are susceptible to man-in-the-middle attacks. A finding." 
+            addToCSV -category "Domain Hardening - SMB" -checkName "SMB2 - Server signing" -checkID "domain_SMBv1-srvSign" -problem $true -comment "SMB signing is disabled by the server" 
         }
     }
     # potentially, we can also check SMB signing configuration using PowerShell:
@@ -969,12 +1076,13 @@ function checkSMBHardening {
         $smbServerConfig | fl *sign* | Out-File $outputFileName -Append
     }#>
     writeToFile -file $outputFile -path $folderLocation -str "============= SMB Signing (Client Settings) =============" 
-    $SmbClientRequireSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters RequireSecuritySignature
-    $SmbClientSupportSigning = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters EnableSecuritySignature
+    $SmbClientRequireSigning = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -regName "RequireSecuritySignature"
+    $SmbClientSupportSigning = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -regName "EnableSecuritySignature"
     if ($SmbClientRequireSigning.RequireSecuritySignature -eq 1)
     {
         writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Enabled"
         writeToFile -file $outputFile -path $folderLocation -str "SMB signing is required by the client, Which is good." 
+        addToCSV -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv1-clientSign" -problem $false -comment "SMB signing is required by the client" 
     }
     else
     {
@@ -983,12 +1091,14 @@ function checkSMBHardening {
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Disabled" 
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (if client agrees) = Enabled"
             writeToFile -file $outputFile -path $folderLocation -str "SMB signing is enabled by the client, but not required. This computer is susceptible to man-in-the-middle attacks against servers that don't require signing. A possible finding."
+            addToCSV -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv1-clientSign" -problem $true -comment "SMB signing is enabled by the client, but not required" 
         }
         else
         {
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Disabled." 
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (if client agrees) = Disabled." 
             writeToFile -file $outputFile -path $folderLocation -str "SMB signing is disabled by the client. This computer is susceptible to man-in-the-middle attacks. A finding."
+            addToCSV -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv1-clientSign" -problem $true -comment "SMB signing is disabled by the client" 
         }
     }
     if ($psVer -ge 4 -and($null -ne $smbServerConfig) -and ($null -ne $smbClientConfig)) {
@@ -1016,33 +1126,52 @@ function checkRDPSecurity {
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToScreen -str "Getting RDP security settings..." -ForegroundColor Yellow
     
-    $WMIFilter = "TerminalName='RDP-tcp'" # there might be issues with the quotation marks - to debug
+    $WMIFilter = "TerminalName=`"RDP-tcp`"" # there might be issues with the quotation marks - to debug
     $RDP = Get-WmiObject -class Win32_TSGeneralSetting -Namespace root\cimv2\terminalservices -Filter $WMIFilter
     writeToFile -file $outputFile -path $folderLocation -str "============= RDP service status ============="
-    $reg = Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -ErrorAction SilentlyContinue
+    $reg = getRegValue -HKLM $true -regPath "\System\CurrentControlSet\Control\Terminal Server" -regName "fDenyTSConnections" #There is false positive in this test
+
     if($null -ne $reg -and $reg.fDenyTSConnections -eq 1)
     {
         writeToFile -file $outputFile -path $folderLocation -str " > RDP Is disabled on this machine."
+        addToCSV -category "Machine Hardening - RDP" -checkName "RDP Status" -checkID "machine_RDP-reg" -problem $false -comment "RDP Is disabled on this machine." 
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > RDP Is enabled on this machine."
+        addToCSV -category "Machine Hardening - RDP" -checkName "RDP Status" -checkID "machine_RDP-reg" -problem $false -comment "RDP Is disabled on this enabled." 
+
     }
     writeToFile -file $outputFile -path $folderLocation -str "============= Remote Desktop Users ============="
     $test = NET LOCALGROUP "Remote Desktop Users"
     $test = $test -split("`n")
     $flag = $false
+    $rdpGenUsersFlag = $false
+    $rdpAdmins = $false
+    $rdpUsers
+    $rdpGenUsersStr
     foreach($line in $test){
+        
         if($line -eq "The command completed successfully."){
             $flag = $false
         }
         if($flag){
             if($line -like "Everyone" -or $line -like "*\Domain Users" -or $line -like "*authenticated users*" -or $line -eq "Guest"){
                 writeToFile -file $outputFile -path $folderLocation -str " > $line - This is a finding"
+                $rdpGenUsersFlag = $true
+                if($null -eq $rdpGenUsersStr){
+                    $rdpGenUsersStr += $line
+                }
+                else{
+                    $rdpGenUsersStr += ",$line"
+                }
+
             }
             elseif($line -eq "Administrator"){
                 writeToFile -file $outputFile -path $folderLocation -str " > $line - local admin can logging throw remote desktop this is a finding"
+                $rdpAdmins = $true
             }
             else{
+                $rdpUsers += line
                 writeToFile -file $outputFile -path $folderLocation -str " > $line"
             }
         }
@@ -1051,22 +1180,55 @@ function checkRDPSecurity {
             $flag = $true
         }
     }
+    if($rdpGenUsersFlag -and $rdpAdmins){
+        addToCSV -category "Machine Hardening - RDP" -checkName "RDP Allowed Users" -checkID "machine_RDP-Users" -problem $true -comment "RDP Allowed users is highly permissive: $rdpGenUsersFlag additionally local admin are allows to remotely login the rest of the allowed RDP list:$rdpUsers" 
+    }
+    elseif($rdpGenUsersFlag){
+        addToCSV -category "Machine Hardening - RDP" -checkName "RDP Allowed Users" -checkID "machine_RDP-Users" -problem $true -comment "RDP Allowed users is highly permissive: $rdpGenUsersFlag rest of the allowed RDP list:$rdpUsers" 
+    }
+    elseif($rdpAdmins){
+        addToCSV -category "Machine Hardening - RDP" -checkName "RDP Allowed Users" -checkID "machine_RDP-Users" -problem $true -comment "Local admin are allows to remotely login the the allowed RDP users and groups list:$rdpUsers" 
+    }
+    else{
+        addToCSV -category "Machine Hardening - RDP" -checkName "RDP Allowed Users" -checkID "machine_RDP-Users" -problem "UNKNOWN" -comment "Allowed RDP users and groups list:$rdpUsers" 
+    }
+     
     writeToFile -file $outputFile -path $folderLocation -str "============= NLA (Network Level Authentication) ============="
     if ($RDP.UserAuthenticationRequired -eq 1)
-        {writeToFile -file $outputFile -path $folderLocation -str "NLA is required, which is fine."}
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "NLA is required, which is fine."
+            addToCSV -category "Machine Hardening - RDP" -checkName "RDP - Network Level Authentication" -checkID "machine_RDP-NLA" -problem $false -comment "NLA is required" 
+        }
     if ($RDP.UserAuthenticationRequired -eq 0)
-        {writeToFile -file $outputFile -path $folderLocation -str "NLA is not required, which is bad. A possible finding."}
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "NLA is not required, which is bad. A possible finding."
+            addToCSV -category "Machine Hardening - RDP" -checkName "RDP - Network Level Authentication" -checkID "machine_RDP-NLA" -problem $true -comment "NLA is not required" 
+
+        }
         writeToFile -file $outputFile -path $folderLocation -str "============= Security Layer (SSL/TLS) ============="
     if ($RDP.SecurityLayer -eq 0)
-        {writeToFile -file $outputFile -path $folderLocation -str "Native RDP encryption is used instead of SSL/TLS, which is bad. A possible finding." }
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "Native RDP encryption is used instead of SSL/TLS, which is bad. A possible finding."
+            addToCSV -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -problem $true -comment "Native RDP encryption is used instead of SSL/TLS" 
+         }
     if ($RDP.SecurityLayer -eq 1)
-        {writeToFile -file $outputFile -path $folderLocation -str "SSL/TLS is supported, but not required ('Negotiate' setting). Which is not recommended, but not necessary a finding."}
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "SSL/TLS is supported, but not required ('Negotiate' setting). Which is not recommended, but not necessary a finding."
+            addToCSV -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -problem $true -comment "SSL/TLS is supported, but not required" 
+        }
     if ($RDP.SecurityLayer -eq 2)
-        {writeToFile -file $outputFile -path $folderLocation -str "SSL/TLS is required for connecting. Which is good."}
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "SSL/TLS is required for connecting. Which is good."
+            addToCSV -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -problem $false -comment "SSL/TLS is required for connecting" 
+        }
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Timeout Settings (from Registry) ============="
-    $RDPTimeout = Get-Item "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" 
+    $RDPTimeout = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows NT\Terminal Services" 
     if ($RDPTimeout.ValueCount -eq 0)
-        {writeToFile -file $outputFile -path $folderLocation -str "RDP timeout is not configured. A possible finding."}
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "RDP timeout is not configured. A possible finding."
+            addToCSV -category "Machine Hardening - RDP" -checkName "RDP - Timeout" -checkID "machine_RDP-Timeout" -problem $true -comment "RDP timeout is not configured" 
+
+    }
     else
     {
         writeToFile -file $outputFile -path $folderLocation -str "The following RDP timeout properties were configured:" 
@@ -1077,6 +1239,7 @@ function checkRDPSecurity {
         writeToFile -file $outputFile -path $folderLocation -str "fResetBroken = Log off session (instead of disconnect) when time limits are reached" 
         writeToFile -file $outputFile -path $folderLocation -str "60000 = 1 minute, 3600000 = 1 hour, etc."
         writeToFile -file $outputFile -path $folderLocation -str "`r`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits"
+        addToCSV -category "Machine Hardening - RDP" -checkName "RDP - Timeout" -checkID "machine_RDP-Timeout" -problem $false -comment "RDP timeout is configured - Check manual file to find specific configuration" 
     } 
     writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Settings (from WMI) ============="
     writeToFile -file $outputFile -path $folderLocation -str ($RDP | Format-List Terminal*,*Encrypt*, Policy*,Security*,SSL*,*Auth* | Out-String )
@@ -1121,6 +1284,7 @@ function checkSensitiveInfo {
 }
 
 # get antivirus status
+# partial csv integration
 function checkAntiVirusStatus {
     param (
         $name
@@ -1146,25 +1310,53 @@ function checkAntiVirusStatus {
             writeToFile -file $outputFile -path $folderLocation -str "Security products status was taken from WMI values on WMI namespace `"root\SecurityCenter`".`r`n"
         }
         if ($null -eq $AntiVirusProducts)
-            {writeToFile -file $outputFile -path $folderLocation -str "No Anti Virus products were found."}
-            writeToFile -file $outputFile -path $folderLocation -str "============= Antivirus Products Status ============="
+            {
+                writeToFile -file $outputFile -path $folderLocation -str "No Anti Virus products were found."
+                addToCSV -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -problem $true -comment "No AntiVirus detected on machine"  
+            }
+        writeToFile -file $outputFile -path $folderLocation -str "============= Antivirus Products Status ============="
+        $sumOutput = ""
+        $outOfDateAV = $false
+        $notEnabledAV = $false
         foreach ($av in $AntiVirusProducts)
         {    
             writeToFile -file $outputFile -path $folderLocation -str ("Product Display name: " + $av.displayname )
             writeToFile -file $outputFile -path $folderLocation -str ("Product Executable: " + $av.pathToSignedProductExe )
             writeToFile -file $outputFile -path $folderLocation -str ("Time Stamp: " + $av.timestamp)
             writeToFile -file $outputFile -path $folderLocation -str ("Product (raw) state: " + $av.productState)
+            sumOutput += ("Product Display name: " + $av.displayname ) + "`n" + ("Product Executable: " + $av.pathToSignedProductExe ) + "`n" + ("Time Stamp: " + $av.timestamp) + "`n" + ("Product (raw) state: " + $av.productState)
             # check the product state
             $hx = '0x{0:x}' -f $av.productState
             if ($hx.Substring(3,2) -match "00|01")
-                {writeToFile -file $outputFile -path $folderLocation -str "AntiVirus is NOT enabled" }
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "AntiVirus is NOT enabled" 
+                    $notEnabledAV = $true
+            }
             else
                 {writeToFile -file $outputFile -path $folderLocation -str "AntiVirus is enabled"}
             if ($hx.Substring(5) -eq "00")
                 {writeToFile -file $outputFile -path $folderLocation -str "Virus definitions are up to date"}
             else
-                {writeToFile -file $outputFile -path $folderLocation -str "Virus definitions are NOT up to date"}
+                {
+                    writeToFile -file $outputFile -path $folderLocation -str "Virus definitions are NOT up to date"
+                    $outOfDateAV = $true
+            }
         }
+        if($sumOutput -ne ""){
+            if($outOfDateAV -and $notEnabledAV){
+                addToCSV -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -problem $true -comment "AntiVirus is not enabled and not up to date `n $sumOutput"  
+            }
+            elseif ($outOfDateAV) {
+                addToCSV -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -problem $true -comment "AntiVirus is not up to date `n $sumOutput"  
+            }
+            elseif ($notEnabledAV){
+                addToCSV -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -problem $true -comment "AntiVirus is not enabled `n $sumOutput"  
+            }
+            else{
+                addToCSV -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -problem $false -comment "AntiVirus is up to date and enabled `n $sumOutput"  
+            }
+        }
+        
         writeToFile -file $outputFile -path $folderLocation -str "============= Antivirus Products Status (Raw Data) ============="
         writeToFile -file $outputFile -path $folderLocation -str ($AntiVirusProducts |Out-String)
         writeToFile -file $outputFile -path $folderLocation -str "============= Firewall Products Status (Raw Data) =============" 
@@ -1172,9 +1364,9 @@ function checkAntiVirusStatus {
         writeToFile -file $outputFile -path $folderLocation -str "============= Anti-Spyware Products Status (Raw Data) =============" 
         writeToFile -file $outputFile -path $folderLocation -str ($AntiSpywareProducts | Out-String)
         
-        # check Windows Defender settings - registry query
+        # check Windows Defender settings - registry query #not adding this section to csv might be added in the future. 
         writeToFile -file $outputFile -path $folderLocation -str "============= Windows Defender Settings Status =============`r`n"
-        $WinDefenderSettings = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager" -ErrorAction SilentlyContinue
+        $WinDefenderSettings = getRegValue -HKLM $true -regPath "\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager"
         if ($null -eq $WinDefenderSettings)
         {
             writeToFile -file $outputFile -path $folderLocation -str "Could not query registry values under HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Policy Manager."
@@ -1240,23 +1432,46 @@ function checkLLMNRAndNetBIOS {
     $LLMNR_Enabled = $LLMNR.EnableMulticast
     writeToFile -file $outputFile -path $folderLocation -str "Registry Setting: `"HKLM:\Software\policies\Microsoft\Windows NT\DNSClient`" -> EnableMulticast = $LLMNR_Enabled"
     if ($LLMNR_Enabled -eq 0)
-        {writeToFile -file $outputFile -path $folderLocation -str "LLMNR is disabled, which is secure."}
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "LLMNR is disabled, which is secure."
+            addToCSV -category "Domain Hardening - Network" -checkName "LLMNR" -checkID "domain_LLMNR" -problem $false -comment "LLMNR is disabled, which is secure"  
+
+    }
     else
-        {writeToFile -file $outputFile -path $folderLocation -str "LLMNR is enabled, which is a finding, especially for workstations."}
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "LLMNR is enabled, which is a finding, especially for workstations."
+            addToCSV -category "Domain Hardening - Network" -checkName "LLMNR" -checkID "domain_LLMNR" -problem $true -comment "LLMNR is enabled"  
+
+        }
         writeToFile -file $outputFile -path $folderLocation -str "============= NETBIOS Name Service Configuration ============="
         writeToFile -file $outputFile -path $folderLocation -str "Checking the NETBIOS Node Type configuration - see 'https://getadmx.com/?Category=KB160177#' for details...`r`n"
         
     $NodeType = (getRegValue -HKLM $true -regPath "\System\CurrentControlSet\Services\NetBT\Parameters" -regName "NodeType").NodeType
     if ($NodeType -eq 2)
-        {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server), which is secure."}
+        {
+            writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server), which is secure."
+            addToCSV -category "Domain Hardening - Network" -checkName "NetBIOS Node type" -checkID "domain_NetBIOSNT" -problem $false -comment "NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server)"  
+        }
     else
     {
         switch ($NodeType)
         {
-            $null {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to the default setting (broadcast queries), which is not secure and a finding."}
-            1 {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to B-node (broadcast queries), which is not secure and a finding."}
-            4 {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to M-node (broadcasts first, then queries the WINS name server), which is not secure and a finding."}
-            8 {writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to H-node (queries the WINS name server first, then broadcasts), which is not secure and a finding."}        
+            $null {
+                writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to the default setting (broadcast queries), which is not secure and a finding."
+                addToCSV -category "Domain Hardening - Network" -checkName "NetBIOS Node type" -checkID "domain_NetBIOSNT" -problem $true -comment "NetBIOS Node Type is set to the default setting (broadcast queries)"  
+            }
+            1 {
+                writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to B-node (broadcast queries), which is not secure and a finding."
+                addToCSV -category "Domain Hardening - Network" -checkName "NetBIOS Node type" -checkID "domain_NetBIOSNT" -problem $true -comment "NetBIOS Node Type is set to B-node (broadcast queries)"  
+            }
+            4 {
+                writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to M-node (broadcasts first, then queries the WINS name server), which is not secure and a finding."
+                addToCSV -category "Domain Hardening - Network" -checkName "NetBIOS Node type" -checkID "domain_NetBIOSNT" -problem $true -comment "NetBIOS Node Type is set to M-node (broadcasts first, then queries the WINS name server)"  
+            }
+            8 {
+                writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to H-node (queries the WINS name server first, then broadcasts), which is not secure and a finding."
+                addToCSV -category "Domain Hardening - Network" -checkName "NetBIOS Node type" -checkID "domain_NetBIOSNT" -problem $true -comment "NetBIOS Node Type is set to H-node (queries the WINS name server first, then broadcasts)"  
+            }        
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "Checking the NETBIOS over TCP/IP configuration for each network interface."
@@ -1271,7 +1486,6 @@ function checkLLMNRAndNetBIOS {
     
 }
 
-# added csv support + reg check function until here - going up
 # check if cleartext credentials are saved in lsass memory for WDigest
 function checkWDigest {
     param (
@@ -2684,6 +2898,7 @@ if (!(Test-Path -Path $folderLocation)){
 # output log
 writeToLog -str "Computer Name: $hostname"
 addToCSV -category "Information" -checkName "Computer Name" -checkID "info_cName" -problem $null -comment $hostname
+addToCSV -category "Information" -checkName "Script Version" -checkID "info_sVer" -problem $null -comment $Version
 writeToLog -str ("Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption)
 addToCSV -category "Information" -checkName "Windows Version" -checkID "info_wVer" -problem $null -comment ((Get-WmiObject -class Win32_OperatingSystem).Caption)
 
