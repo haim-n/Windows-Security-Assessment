@@ -924,18 +924,18 @@ function checkInternetAccess{
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > Port 443 is open for outbound internet access. This may be considered a finding, at least on servers." 
-                $naOutput += "`nPort 443: Open"
+                $naOutput += "; Port 443: Open"
                 $naStdPorts = $true
             }
             else {
                 $str = " > test received http code: "+$test.StatusCode+" Port 443 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
-                $naOutput += "`nPort 443: Blocked"
+                $naOutput += "; Port 443: Blocked"
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Port 443 outbound access to internet failed - received a time out."
-            $naOutput += "`nPort 443: Blocked"
+            $naOutput += "; Port 443: Blocked"
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:666 =============" 
@@ -949,18 +949,18 @@ function checkInternetAccess{
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > Port 666 is open for outbound internet access. This may be considered a finding, at least on servers." 
-                $naOutput += "`nPort 663: Open"
+                $naOutput += "; Port 663: Open"
                 $naNStdPorts = $true
             }
             else {
                 $str = " > test received http code: "+$test.StatusCode+" Port 666 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
-                $naOutput += "`nPort 663: Blocked"
+                $naOutput += "; Port 663: Blocked"
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Port 666 outbound access to internet failed - received a time out."
-            $naOutput += "`nPort 663: Blocked"
+            $naOutput += "; Port 663: Blocked"
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "============= curl -DisableKeepAlive -TimeoutSec 2 -Uri http://portquiz.net:8080 =============" 
@@ -975,18 +975,18 @@ function checkInternetAccess{
         if($null -ne $test){
             if($test.StatusCode -eq 200){
                 writeToFile -file $outputFile -path $folderLocation -str " > Port 8080 is open for outbound internet access. This may be considered a finding, at least on servers." 
-                $naOutput += "`nPort 8080: Open"
+                $naOutput += "; Port 8080: Open"
                 $naNStdPorts = $true
             }
             else {
                 $str = " > test received http code: "+$test.StatusCode+" Port 8080 outbound access to internet failed - Firewall URL filtering might block this test."
                 writeToFile -file $outputFile -path $folderLocation -str $str  
-                $naOutput += "`nPort 8080: Blocked"
+                $naOutput += "; Port 8080: Blocked"
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Port 8080 outbound access to internet failed - received a time out."
-            $naOutput += "`nPort 8080: Blocked"
+            $naOutput += "; Port 8080: Blocked"
         }
         if($naStdPorts -and $naNStdPorts){
             addToCSV -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -problem $true -comment "All ports are open for this machine: $naOutput" 
@@ -1209,7 +1209,7 @@ function checkRDPSecurity {
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > RDP Is enabled on this machine."
-        addToCSV -category "Machine Hardening - RDP" -checkName "RDP Status" -checkID "machine_RDP-reg" -problem $false -comment "RDP Is disabled on this enabled." 
+        addToCSV -category "Machine Hardening - RDP" -checkName "RDP Status" -checkID "machine_RDP-reg" -problem $false -comment "RDP Is enabled on this machine." 
 
     }
     writeToFile -file $outputFile -path $folderLocation -str "============= Remote Desktop Users ============="
@@ -1961,7 +1961,7 @@ function checkPowerShellAudit {
             }
             if(!$booltest){
                 writeToFile -file $outputFile -path $folderLocation -str  " > PowerShell - Module Logging is enabled on all modules but only on the user."
-                addToCSV -category "Machine Hardening - Audit" -checkName "Powershell Audit - Modules" -checkID "machine_PSModuleLog" -problem $fasle -comment "Powershell Module Logging is enabled on all modules. (Only on current user)"
+                addToCSV -category "Machine Hardening - Audit" -checkName "Powershell Audit - Modules" -checkID "machine_PSModuleLog" -problem $false -comment "Powershell Module Logging is enabled on all modules. (Only on current user)"
 
             }
             else{
@@ -2599,12 +2599,12 @@ function checkUnquotedSePath {
         }
     }
     if ($boolBadPath){
-        addToCSV -category "Vulnerabilities" -checkName "unquoted path" -checkID "vul_quotedPath" -problem $true -comment ("There are vulnerable services in this machine:"+($badPaths | Out-String))
+        addToCSV -category "Vulnerabilities" -checkName "Unquoted path" -checkID "vul_quotedPath" -problem $true -comment ("There are vulnerable services in this machine:"+($badPaths | Out-String))
         writeToFile -file $outputFile -path $folderLocation -str " > There are vulnerable services in this machine:"
         writeToFile -file $outputFile -path $folderLocation -str  ($badPaths | Out-String)
     }
     else{
-        addToCSV -category "Vulnerabilities" -checkName "unquoted path" -checkID "vul_quotedPath" -problem $false -comment "No Service found that is vulnerable with Unquoted path "
+        addToCSV -category "Vulnerabilities" -checkName "Unquoted path" -checkID "vul_quotedPath" -problem $false -comment "No Service found that is vulnerable with Unquoted path "
         writeToFile -file $outputFile -path $folderLocation -str " > The check did not find any service that is vulnerable to unquoted path escalation attack. This is good."
     }
 }
@@ -2647,7 +2647,7 @@ function checkSimulEhtrAndWifi {
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Minimize the number of simultaneous connections to the Internet or a Windows Domain is not configured"
-            addToCSV -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -problem "UNKNOWN" -comment "Machine is missing configuration for simultaneous Ethernet connections (e.g. for servers it is fine to not configure this setting)"
+            addToCSV -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -problem "UNKNOWN" -comment "Machine is missing configuration for simultaneous Ethernet connections (e.g., for servers it is fine to not configure this setting)"
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Prohibit connection to non-domain networks when connected to domain authenticated network is configured"
@@ -2665,7 +2665,7 @@ function checkSimulEhtrAndWifi {
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > No configuration found to restrict machine connection to non-domain networks when connected to domain authenticated network"
-            addToCSV -category "Machine Hardening - Networking" -checkName "Prohibit connection to non-domain networks" -checkID "machine_PCTNDNetwork" -problem "UNKNOWN" -comment "No configuration found to restrict machine connection to non-domain networks(e.g. for servers it is fine to not configure this setting)"
+            addToCSV -category "Machine Hardening - Networking" -checkName "Prohibit connection to non-domain networks" -checkID "machine_PCTNDNetwork" -problem "UNKNOWN" -comment "No configuration found to restrict machine connection to non-domain networks(e.g., for servers it is fine to not configure this setting)"
         }
       
     }
@@ -2846,7 +2846,7 @@ function checkKerberos{
                  }
                 2147483616 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows Future encryption types only - things will not work properly inside the domain (probably)"
-                    addToCSV -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -problem $true -comment "Kerberos encryption allows Future encryption types only (e.g. dose not allow any encryption"
+                    addToCSV -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -problem $true -comment "Kerberos encryption allows Future encryption types only (e.g., dose not allow any encryption"
                 }
 
                 0 { 
@@ -2905,7 +2905,7 @@ function checkKerberos{
         writeToFile -file $outputFile -path $folderLocation -str "Kerberos max packet size before using UDP."
         $reg = Get-ItemProperty $kerbPath -Name "MaxPacketSize" -ErrorAction SilentlyContinue
         if($null -eq $reg -or $reg.MaxPacketSize -eq 0){
-            writeToFile -file $outputFile -path $folderLocation -str " > Kerberos max packet size is not configured or set to 0 (e.g. not using UDP at all) - this is a ok"
+            writeToFile -file $outputFile -path $folderLocation -str " > Kerberos max packet size is not configured or set to 0 (e.g., not using UDP at all) - this is a ok"
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > erberos max packet size is set to " + $reg.MaxPacketSize + " - this is a finding!"
