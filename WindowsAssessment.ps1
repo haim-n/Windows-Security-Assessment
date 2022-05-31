@@ -3,7 +3,7 @@ param ([Switch]$EnableSensitiveInfoSearch = $false)
 
 $Version = "1.34" # used for logging purposes
 ###########################################################
-<# TODO:
+<# TODO: 
 - Output the results to a single file with a simple table - in validation
 - Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
 - Check for bugs in the SMB1 check - fixed need to check
