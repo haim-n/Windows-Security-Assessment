@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.33" # used for logging purposes
+$Version = "1.34" # used for logging purposes
 ###########################################################
 <# TODO:
 - Output the results to a single file with a simple table - in validation
@@ -11,13 +11,14 @@ $Version = "1.33" # used for logging purposes
 - Debug the RDP check on multiple OS versions - There is a problem in this check (writes RDP disabled when in fact it is open)
 - Add check into NetSessionEnum to see whether running on a DC
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
-- Add amsi test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
+- Add AMSI test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Move lists (like processes or services) to CSV format instead of TXT - in progress
 - Consider separating the Domain-Hardening output files - checks aren't related
 - Ensure that the internet connectivity check (curl over HTTP/S) proxy aware
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
+-- Determine LDAP Signing and Channel Binding (https://4sysops.com/archives/secure-domain-controllers-with-ldap-channel-binding-and-ldap-signing)
 -- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
@@ -68,6 +69,8 @@ Controls Checklist:
 - Credential delegation is not configured or disabled (gpresult file: Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM, admin needed)
 - Local administrators group is configured as a restricted group with fixed members (Security-Policy inf file: Restricted Groups, admin needed, low priority)
 - UAC is enabled (Security-Policy inf file: User Account Control settings, admin needed)
+- LDAP Signing is required on Domain Controllers (GPResult/Security-Policy: "Domain controller: LDAP server signing requirements" set to "Require signing")
+- LDAP Channel Binding is required on Domain Controllers (GPResult/Security-Policy: "Domain controller: LDAP server channel binding token requirements" set to "Always")
 - Antivirus is running and updated, advanced Windows Defender features are utilized (AntiVirus file)
 - Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch, admin needed)
 - Service Accounts cannot login interactively (Security-Policy inf file: Deny log on locally/remote, admin needed)
@@ -291,6 +294,73 @@ function dataGPO {
             else{
                 writeToLog -str "Function dataGPO: gpresult exported successfully "
             }
+            #getting full GPOs folders from sysvol
+            writeToLog -str "Function dataGPO: gpresult exporting xml file"
+            $file = getNameForFile -name "gpresult" -extension ".xml"
+            $folderName = "Applied GPOs"
+            $gpoXMLPath =  $folderLocation+"\"+ $file
+            $appliedGPOs = @()
+            gpresult /f /x $gpoXMLPath
+            [xml]$xmlEl = Get-Content $gpoXMLPath
+            mkdir -Name $folderName -Path $folderLocation | Out-Null
+            $GPOsFolder = $folderLocation + "\" + $folderName 
+            if(Test-Path -Path $GPOsFolder -PathType Container){
+                $computerGPOs = ($xmlEl.Rsop.ComputerResults.GPO)
+                $usersGPOs = ($xmlEl.Rsop.UserResults.GPO)
+                if($null -eq $computerGPOs){
+                    if($runningAsAdmin)
+                    {writeToLog -str "Function dataGPO: exporting full GPOs did not found any computer GPOs"}
+                    else{
+                        writeToLog -str "Function dataGPO: exporting full GPOs did not found any computer GPOs (not running as admin)"
+                    }
+                }
+                writeToLog -str "Function dataGPO: exporting applied GPOs"
+                foreach ($gpo in $computerGPOs){
+                    if($gpo.Name -notlike "{*"){
+                        if($gpo.Name -ne "Local Group Policy" -and $gpo.Enabled -eq "true" -and $gpo.IsValid -eq "true"){
+                            $gpoGuid = $gpo.Path.Identifier.'#text'
+                            $fullGPOPath = ("\\$domainName\SYSVOL\$domainName\Policies\$gpoGuid\")
+                            if(!$appliedGPOs.Contains($gpoGuid))
+                            {
+                                $appliedGPOs += $gpoGuid
+                                Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                            }
+                        }
+                    }
+                    elseif($gpo.Enabled -eq "true" -and $gpo.IsValid -eq "true"){
+                        $fullGPOPath = ("\\$domainName\SYSVOL\$domainName\Policies\"+$gpo.Name+"\")
+                        if(!$appliedGPOs.Contains($gpo.Name))
+                        {
+                            $appliedGPOs += $gpo.Name
+                            Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                        }
+                    }
+                }
+                foreach ($gpo in $usersGPOs){
+                    if($gpo.Name -notlike "{*"){
+                        if($gpo.Name -ne "Local Group Policy"){
+                            $gpoGuid = $gpo.Path.Identifier.'#text'
+                            $fullGPOPath = ("\\$domainName\SYSVOL\$domainName\Policies\$gpoGuid\")
+                            if(!$appliedGPOs.Contains($gpoGuid))
+                            {
+                                $appliedGPOs += $gpoGuid
+                                Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                            }
+                        }
+                    }
+                    elseif($gpo.Enabled -eq "true" -and $gpo.IsValid -eq "true"){
+                        $fullGPOPath = ("\\$domainName\SYSVOL\$domainName\Policies\"+$gpo.Name+"\")
+                        if(!$appliedGPOs.Contains($gpo.Name))
+                        {
+                            $appliedGPOs += $gpo.Name
+                            Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue 
+                        }
+                    }
+                }
+            }
+            else{
+                writeToLog -str "Function dataGPO: exporting full GPOs failed because function failed to create folder"
+            }   
         }
         else
         {
@@ -326,6 +396,7 @@ function dataSecurityPolicy {
 
 
 #adding CSV Support until hare (going down)
+# Get windows features
 function dataWinFeatures {
     param (
         $name
@@ -353,7 +424,7 @@ function dataWinFeatures {
             if (((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2) -or ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 3))
             {
                 $outputFile = getNameForFile -name $name -extension ".csv"
-                Get-WindowsFeature | export-csv -Path $outputFile |  Export-CSV -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
+                Get-WindowsFeature |  Export-CSV -path ($folderLocation+"\"+$outputFile) -NoTypeInformation -ErrorAction SilentlyContinue
             }
         }
         else{
@@ -1222,7 +1293,7 @@ function checkRDPSecurity {
             addToCSV -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -problem $false -comment "SSL/TLS is required for connecting" 
         }
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Timeout Settings (from Registry) ============="
-    $RDPTimeout = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows NT\Terminal Services" 
+    $RDPTimeout = Get-Item "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services"
     if ($RDPTimeout.ValueCount -eq 0)
         {
             writeToFile -file $outputFile -path $folderLocation -str "RDP timeout is not configured. A possible finding."
@@ -1882,7 +1953,7 @@ function checkPowerShellAudit {
         $temp = getRegValue -HKLM $false -regPath "\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -regName "EnableModuleLogging"
         if($null -ne $temp -and $temp.EnableModuleLogging -eq 1){
             $booltest = $false
-            $temp2 = getRegValue -HKLM $false -regPath "Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames"
+            $temp2 = getRegValue -HKLM $false -regPath "\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames"
             foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
                 if($item -eq "*"){
                     $booltest = $True
@@ -1907,7 +1978,7 @@ function checkPowerShellAudit {
     }
     elseif($temp.EnableModuleLogging -eq 1){
         $booltest = $false
-        $temp2 = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames"
+        $temp2 = Get-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames" -ErrorAction SilentlyContinue
         foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
             if($item -eq "*"){
                 $booltest = $True
