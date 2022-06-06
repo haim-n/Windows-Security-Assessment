@@ -186,8 +186,7 @@ function addToCSV {
         $risk,
         $finding,
         $comment,
-        $relatedFile,
-        $BPID
+        $relatedFile
 
     )
     $script:checksArray += New-Object -TypeName PSObject -Property @{    
@@ -199,13 +198,13 @@ function addToCSV {
         Finding = $finding
         Comments = $comment
         'Related file' = $relatedFile
-        BPID = $BPID
       }
 }
 
 function addControlsToCSV {
     #To be added.
 }
+
 
 #<-------------------------  Data Collection Functions ------------------------->
 # get current user privileges
@@ -288,6 +287,16 @@ function dataGPO {
     param (
         $name
     )
+    function testArray{
+        param ($gpoName, $gpoList)
+        foreach ($name in $gpoList){
+            if($name -eq $gpoName){
+                return $true
+            }
+        }
+        return $false
+    }
+    $MAX_GPO_SIZE = 5
     writeToLog -str "running dataGPO function"
     # check if the computer is in a domain
     if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)
@@ -333,19 +342,23 @@ function dataGPO {
                         if($gpo.Name -ne "Local Group Policy" -and $gpo.Enabled -eq "true" -and $gpo.IsValid -eq "true"){
                             $gpoGuid = $gpo.Path.Identifier.'#text'
                             $fullGPOPath = ("\\$domainName\SYSVOL\$domainName\Policies\$gpoGuid\")
-                            if(!$appliedGPOs.Contains($gpoGuid))
+                            if(!(testArray -gpoList $appliedGPOs -gpoName $gpoGuid))
                             {
                                 $appliedGPOs += $gpoGuid
-                                Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                                if(((Get-ChildItem  $fullGPOPath -Recurse| Measure-Object -Property Length -s).sum / 1Mb) -le $MAX_GPO_SIZE){
+                                    Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                                }
                             }
                         }
                     }
                     elseif($gpo.Enabled -eq "true" -and $gpo.IsValid -eq "true"){
                         $fullGPOPath = ("\\$domainName\SYSVOL\$domainName\Policies\"+$gpo.Name+"\")
-                        if(!$appliedGPOs.Contains($gpo.Name))
+                        if(!(testArray -gpoList $appliedGPOs -gpoName $gpo.Name))
                         {
                             $appliedGPOs += $gpo.Name
-                            Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                            if(((Get-ChildItem  $fullGPOPath -Recurse | Measure-Object -Property Length -s).sum / 1Mb) -le $MAX_GPO_SIZE){
+                                Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                            }
                         }
                     }
                 }
@@ -354,19 +367,23 @@ function dataGPO {
                         if($gpo.Name -ne "Local Group Policy"){
                             $gpoGuid = $gpo.Path.Identifier.'#text'
                             $fullGPOPath = ("\\$domainName\SYSVOL\$domainName\Policies\$gpoGuid\")
-                            if(!$appliedGPOs.Contains($gpoGuid))
+                            if(!(testArray -gpoList $appliedGPOs -gpoName $gpoGuid))
                             {
                                 $appliedGPOs += $gpoGuid
-                                Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                                if(((Get-ChildItem  $fullGPOPath -Recurse | Measure-Object -Property Length -s).sum / 1Mb) -le $MAX_GPO_SIZE){
+                                    Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue
+                                }
                             }
                         }
                     }
                     elseif($gpo.Enabled -eq "true" -and $gpo.IsValid -eq "true"){
                         $fullGPOPath = ("\\$domainName\SYSVOL\$domainName\Policies\"+$gpo.Name+"\")
-                        if(!$appliedGPOs.Contains($gpo.Name))
+                        if(!(testArray -gpoList $appliedGPOs -gpoName $gpo.Name))
                         {
                             $appliedGPOs += $gpo.Name
-                            Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue 
+                            if(((Get-ChildItem  $fullGPOPath -Recurse | Measure-Object -Property Length -s).sum / 1Mb) -le $MAX_GPO_SIZE){
+                                Copy-item -path $fullGPOPath -Destination ("$GPOsFolder\"+$gpo.Name) -Recurse -ErrorAction SilentlyContinue 
+                            }
                         }
                     }
                 }
@@ -2963,6 +2980,16 @@ else{
     $temp = $temp.Substring(0,$test.IndexOf("|"))
     $folderLocation = $hostname+"_"+$temp
 }
+if(Test-Path $folderLocation){
+    Remove-Item -Recurse -Path $folderLocation -Force -ErrorAction SilentlyContinue |Out-Null
+}
+try{
+    New-Item -Path $folderLocation -ItemType Container -Force |Out-Null
+}
+catch{
+    writeToScreen -ForegroundColor "Red" -str "Failed to create folder for output in:"$pwd.Path
+    exit -1
+}
 
 $transcriptFile = getNameForFile -name "Log-ScriptTranscript" -extension ".txt"
 # get the windows version for later use
@@ -3149,7 +3176,7 @@ checkKerberos -name "Domain-Hardening"
 
 #########################################################
 
-$script:checksArray | Select-Object "Category", "CheckName","Status","Risk","Finding","Comments","Related file","CheckID","BPID" | Export-Csv -Path ($folderLocation+"\"+(getNameForFile -name "checks" -extension ".csv")) -NoTypeInformation -ErrorAction SilentlyContinue
+$script:checksArray | Select-Object "Category", "CheckName","Status","Risk","Finding","Comments","Related file","CheckID" | Export-Csv -Path ($folderLocation+"\"+(getNameForFile -name "checks" -extension ".csv")) -NoTypeInformation -ErrorAction SilentlyContinue
 
 $currTime = Get-Date
 writeToLog -str ("Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss"))
