@@ -1402,7 +1402,7 @@ function checkAntiVirusStatus {
             writeToFile -file $outputFile -path $folderLocation -str ("Product Executable: " + $av.pathToSignedProductExe )
             writeToFile -file $outputFile -path $folderLocation -str ("Time Stamp: " + $av.timestamp)
             writeToFile -file $outputFile -path $folderLocation -str ("Product (raw) state: " + $av.productState)
-            sumOutput += ("Product Display name: " + $av.displayname ) + "`n" + ("Product Executable: " + $av.pathToSignedProductExe ) + "`n" + ("Time Stamp: " + $av.timestamp) + "`n" + ("Product (raw) state: " + $av.productState)
+            $sumOutput += ("Product Display name: " + $av.displayname ) + "`n" + ("Product Executable: " + $av.pathToSignedProductExe ) + "`n" + ("Time Stamp: " + $av.timestamp) + "`n" + ("Product (raw) state: " + $av.productState)
             # check the product state
             $hx = '0x{0:x}' -f $av.productState
             if ($hx.Substring(3,2) -match "00|01")
@@ -1491,6 +1491,9 @@ function checkAntiVirusStatus {
         writeToFile -file $outputFile -path $folderLocation -str ($MpPreference.AttackSurfaceReductionRules_Actions | Out-String)
         writeToFile -file $outputFile -path $folderLocation -str "Attack Surface Reduction Only Exclusions:" 
         writeToFile -file $outputFile -path $folderLocation -str $MpPreference.AttackSurfaceReductionOnlyExclusions
+    }
+    else{
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvUn -finding "AntiVirus test is currently not running on servers"   -risk $csvR2
     }
 }
 
@@ -2951,11 +2954,11 @@ if($partOfDomain){
     $folderLocation = $hostname+"_"+$domainName
 }
 else{
-    $test = (Get-WMIObject win32_operatingsystem).name
+    $temp = (Get-WMIObject win32_operatingsystem).name
     $temp = $temp.Replace(" ","")
     $temp = $temp.Trim("Microsoft")
     $temp = $temp.Replace("Windows","Win")
-    $temp = $temp.Substring(0,$test.IndexOf("|"))
+    $temp = $temp.Substring(0,$temp.IndexOf("|"))
     $folderLocation = $hostname+"_"+$temp
 }
 if(Test-Path $folderLocation){
