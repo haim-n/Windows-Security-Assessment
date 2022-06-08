@@ -161,7 +161,7 @@ function addControlsToCSV {
     addToCSV -category "Controls" -checkID  "control_RDPTimeOut" -checkName "RDP timeout" -finding "Ensure RDP timeout for disconnected sessions is configured" -risk $csvR1 -relatedFile "RDP"
     addToCSV -category "Controls" -checkID  "control_AuditPol" -checkName "Audit policy" -finding "Ensure audit policy is sufficient (need admin permission to run)" -risk $csvR1 -relatedFile "Audit-Policy"
     addToCSV -category "Controls" -checkID  "control_LocalUsers" -checkName "Local users" -finding "Ensure local users are all disabled or have their password rotated" -risk $csvR1 -relatedFile "Local-Users, Security-Policy.inf" -comment "Local users and cannot connect over the network: Deny access to this computer from the network "
-    addToCSV -category "Controls" -checkID  "control_CredDel" -checkName "Credential delegation" -finding "Ensure Credential delegation is not configured or disabled (need admin permission to run)" -risk $csvR1 -relatedFile "gpresult" -comment "Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM"
+    addToCSV -category "Controls" -checkID  "control_CredDel" -checkName "Credential delegation" -finding "Ensure Credential delegation is not configured or disabled (need admin permission to run)" -risk $csvR1 -relatedFile "GPResult" -comment "Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM"
     addToCSV -category "Controls" -checkID  "control_LocalAdminRes" -checkName "Local administrators in Restricted groups" -finding "Ensure local administrators group is configured as a restricted group with fixed members (need admin permission to run)" -risk $csvR1 -relatedFile "Security-Policy.inf" -comment "Restricted Groups"
     addToCSV -category "Controls" -checkID  "control_UAC" -checkName "UAC enforcement " -finding "Ensure UAC is enabled (need admin permission to run)" -risk $csvR1 -relatedFile "Security-Policy.inf" -comment "User Account Control settings"
     addToCSV -category "Controls" -checkID  "control_LocalAV" -checkName "Local Antivirus" -finding "Ensure Antivirus is running and updated, advanced Windows Defender features are utilized" -risk $csvR1 -relatedFile "AntiVirus file"
@@ -176,7 +176,7 @@ function addControlsToCSV {
     addToCSV -category "Controls" -checkID  "control_MalProcSrvSoft" -checkName "Irrelevant/malicious processes/services/software" -finding "Ensure no irrelevant/malicious processes/services/software exists" -risk $csvR1 -relatedFile "Services, Process-list, Software, Netstat"
     addToCSV -category "Controls" -checkID  "control_EventLog" -checkName "Event Log" -finding "Ensure logs are exported to SIEM" -risk $csvR1 -relatedFile "Audit-Policy"
     addToCSV -category "Controls" -checkID  "control_HostFW" -checkName "Host firewall" -finding "Host firewall rules are configured to block/filter inbound (Host Isolation)" -risk $csvR1 -relatedFile "indows-Firewall, Windows-Firewall-Rules"
-    addToCSV -category "Controls" -checkID  "control_Macros" -checkName "Macros are restricted" -finding "Ensure office macros are restricted" -risk $csvR1 -relatedFile "gpresult, currently WIP"
+    addToCSV -category "Controls" -checkID  "control_Macros" -checkName "Macros are restricted" -finding "Ensure office macros are restricted" -risk $csvR1 -relatedFile "GPResult, currently WIP"
 }
 
 
@@ -292,7 +292,7 @@ function dataGPO {
             }
             #getting full GPOs folders from sysvol
             writeToLog -str "Function dataGPO: gpresult exporting xml file"
-            $file = getNameForFile -name "gpresult" -extension ".xml"
+            $file = getNameForFile -name $name -extension ".xml"
             $folderName = "Applied GPOs"
             $gpoXMLPath =  $folderLocation+"\"+ $file
             $appliedGPOs = @()
@@ -382,7 +382,7 @@ function dataSecurityPolicy {
     )
     writeToLog -str "running dataSecurityPolicy function"
     # to open the *.inf output file, open MMC, add snap-in "Security Templates", right click and choose new path, choose the *.inf file path, and open it
-    $sPPath = $hostname+"\"+(getNameForFile -name $name -extension ".inf")
+    $sPPath = $folderLocation+"\"+(getNameForFile -name $name -extension ".inf")
     if ($runningAsAdmin)
     {
         writeToScreen -str "Getting security policy settings..." -ForegroundColor Yellow
@@ -3041,7 +3041,7 @@ writeToLog -str ("Script Start Time: " + $startTime.ToString("dd/MM/yyyy HH:mm:s
 dataWhoAmI -name "Whoami"
 
 # get IP settings
-dataIpSettings -name "ipconfig"
+dataIpSettings -name "Ipconfig"
 
 # test proxy settings
 checkProxyConfiguration -name "Internet-Connectivity"
@@ -3053,7 +3053,7 @@ checkInternetAccess -name "Internet-Connectivity"
 getNetCon -name "Netstat"
 
 # get GPOs
-dataGPO -name "gpresult"
+dataGPO -name "GPResult"
 
 # get security policy settings (secpol.msc), run as admin is required
 dataSecurityPolicy -name "Security-Policy"
