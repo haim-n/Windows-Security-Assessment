@@ -852,6 +852,12 @@ function checkInternetAccess{
     param (
         $name 
     )
+    if($isServer){
+        $currentRisk = $csvR4
+    }
+    else{
+        $currentRisk = $csvR3
+    }
     $outputFile = getNameForFile -name $name -extension ".txt"
     writeToLog -str "running checkInternetAccess function"    
     writeToScreen -str "Checking if internet access if allowed... " -ForegroundColor Yellow
@@ -868,24 +874,24 @@ function checkInternetAccess{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server was successful. This may be considered a finding, at least on servers."
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
             writeToFile -file $outputFile -path $folderLocation -str ($test | Out-String)
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvOp -finding "Public DNS is accessible." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvOp -finding "Public DNS is accessible." -risk $currentRisk
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server received a timeout. This is generally good - direct access to internet DNS isn't allowed."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvSt -finding "Public DNS is not accessible." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvSt -finding "Public DNS is not accessible." -risk $currentRisk
         }
     }
     else{
         $result = nslookup google.com 8.8.8.8
         if ($result -like "*DNS request timed out*"){
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server received a timeout. This is generally good - direct access to internet DNS isn't allowed."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvSt -finding "Public DNS is not accessible." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvSt -finding "Public DNS is not accessible." -risk $currentRisk
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server didn't receive a timeout. This may be considered a finding, at least on servers."
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
             writeToFile -file $outputFile -path $folderLocation -str ($result | Out-String)
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvOp -finding "Public DNS is accessible." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvOp -finding "Public DNS is accessible." -risk $currentRisk
         }
     }
     if($psVer -ge 4){
@@ -992,22 +998,22 @@ function checkInternetAccess{
             $naOutput += "; Port 8080: Blocked"
         }
         if($naStdPorts -and $naNStdPorts){
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvOp -finding "All ports are open for this machine: $naOutput." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvOp -finding "All ports are open for this machine: $naOutput." -risk $currentRisk
         }
         elseif ($naStdPorts){
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvUn -finding "Standard ports (e.g., 80,443) are open for this machine (bad for servers ok for workstations): $naOutput." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvUn -finding "Standard ports (e.g., 80,443) are open for this machine (bad for servers ok for workstations): $naOutput." -risk $currentRisk
         }
         elseif ($naNStdPorts){
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvOp -finding "None standard ports are open (maybe miss configuration?) for this machine (bad for servers ok for workstations): $naOutput." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvOp -finding "None standard ports are open (maybe miss configuration?) for this machine (bad for servers ok for workstations): $naOutput." -risk $currentRisk
         }
         else{
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvSt -finding "All browsing ports seem to be closed: $naOutput." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvSt -finding "All browsing ports seem to be closed: $naOutput." -risk $currentRisk
         }
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str "PowerShell is lower then version 4. Other checks are not supported."
         writeToLog -str "Function checkInternetAccess: PowerShell executing the script does not support curl command. Skipping network connection test."
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvUn -finding "PowerShell executing the script does not support curl command. (e.g., PSv3 and below)." -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvUn -finding "PowerShell executing the script does not support curl command. (e.g., PSv3 and below)." -risk $currentRisk
     }
     <#
     # very long test - skipping it for now 
@@ -1811,35 +1817,37 @@ function checkNTLMv2 {
             writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default. On Windows 2008/7 and above, default is to send NTLMv2 only (Level 3), which is quite secure. `r`n" #using system default depends on OS version
             addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "NTLM Authentication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default. On Windows 2008/7 and above, default is to send NTLMv2 only (Level 3)." -risk $csvR4
         }
-        switch ($temp.lmcompatibilitylevel) {
-            (0) { 
-                writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security." -risk $csvR4
-            }
-            (1) { 
-                writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
-            }
-            (2) { 
-                writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
-            }
-            (3) { 
-                writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration.`r`n"
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
-            }
-            (4) { 
-                writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration. If this is a DC, it means that LM is not applicable in the domain at all.`r`n"
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
-            }
-            (5) { 
-                writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - This is the most hardened configuration. If this is a DC, it means that NTLMv2 and LM are not applicable in the domain at all.)`r`n"
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it." -risk $csvR4
-            }
-            Default {
-                writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`r`n"
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvUn -finding ("(Level Unknown) - " + $temp.lmcompatibilitylevel +".")  -risk $csvR4
+        else{
+            switch ($temp.lmcompatibilitylevel) {
+                (0) { 
+                    writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security." -risk $csvR4
+                }
+                (1) { 
+                    writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
+                }
+                (2) { 
+                    writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
+                }
+                (3) { 
+                    writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration.`r`n"
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
+                }
+                (4) { 
+                    writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration. If this is a DC, it means that LM is not applicable in the domain at all.`r`n"
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
+                }
+                (5) { 
+                    writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - This is the most hardened configuration. If this is a DC, it means that NTLMv2 and LM are not applicable in the domain at all.)`r`n"
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it." -risk $csvR4
+                }
+                Default {
+                    writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`r`n"
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvUn -finding ("(Level Unknown) :" + $temp.lmcompatibilitylevel +".")  -risk $csvR4
 
+                }
             }
         }
     }
@@ -3008,9 +3016,18 @@ addToCSV -category "Information" -checkName "Script Version" -checkID "info_sVer
 writeToLog -str ("Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption)
 addToCSV -category "Information" -checkName "Windows Version" -checkID "info_wVer" -status $null -finding ((Get-WmiObject -class Win32_OperatingSystem).Caption) -risk $csvR1
 switch ((Get-WmiObject -Class Win32_OperatingSystem).ProductType){
-    1 {$OSType = "Client"}
-    2 {$OSType = "Domain Controller"}
-    3 {$OSType = "Server"}
+    1 {
+        $OSType = "Client"
+        $isServer = $false
+    }
+    2 {
+        $OSType = "Domain Controller"
+        $isServer = $true
+    }
+    3 {
+        $OSType = "Server"
+        $isServer = $true
+    }
     default: {$OSType = "Unknown"}
 }
 addToCSV -category "Information" -checkName "OS Type" -checkID "info_OSType" -status $null -finding $OSType -risk $csvR1
