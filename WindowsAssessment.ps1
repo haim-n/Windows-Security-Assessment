@@ -226,11 +226,10 @@ function dataIpSettings {
         $outputFile = getNameForFile -name $name -extension ".csv"
         Get-NetIPConfiguration | Select-object InterfaceDescription -ExpandProperty AllIPAddresses | Export-CSV -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
     }
-    else{
-        $outputFile = getNameForFile -name $name -extension ".txt"
-        writeToFile -file $outputFile -path $folderLocation -str "`Output of `"ipconfig /all`" command:`r`n" 
-        writeToFile -file $outputFile -path $folderLocation -str (ipconfig /all) 
-    }
+    $outputFile = getNameForFile -name $name -extension ".txt"
+    writeToFile -file $outputFile -path $folderLocation -str "`Output of `"ipconfig /all`" command:`r`n" 
+    writeToFile -file $outputFile -path $folderLocation -str (ipconfig /all) 
+    
     
 }
 
