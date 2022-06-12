@@ -4,7 +4,6 @@ param ([Switch]$EnableSensitiveInfoSearch = $false)
 $Version = "1.36" # used for logging purposes
 ###########################################################
 <# TODO: 
-- Output the results to a single file with a simple table - in validation
 - Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
 - Check for bugs in the SMB1 check - fixed need to check
 - Debug the FirewallProducts check
@@ -397,8 +396,6 @@ function dataSecurityPolicy {
     }
 }
 
-
-#adding CSV Support until hare (going down)
 # Get windows features
 function dataWinFeatures {
     param (
@@ -477,6 +474,9 @@ function dataInstalledHotfixes {
     writeToFile -file $outputFile -path $folderLocation -str "https://support.microsoft.com/he-il/help/13853/windows-lifecycle-fact-sheet" 
     writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-HotFix`" PowerShell command, sorted by installation date:`r`n" 
     writeToFile -file $outputFile -path $folderLocation -str (Get-HotFix | Sort-Object InstalledOn -Descending -ErrorAction SilentlyContinue | Out-String )
+    $outputFile = getNameForFile -name $name -extension ".csv"
+    Get-HotFix | Sort-Object InstalledOn -Descending -ErrorAction SilentlyContinue | Select-Object "__SERVER","InstalledOn","HotFixID","InstalledBy","Description","Caption","FixComments","InstallDate","Name","Status" | export-csv -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
+
     <# wmic qfe list full /format:$htable > $hostname\hotfixes_$hostname.html
     if ((Get-Content $hostname\hotfixes_$hostname.html) -eq $null)
     {
@@ -487,6 +487,7 @@ function dataInstalledHotfixes {
     
 }
 
+#adding CSV Support until hare (going down)
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
 function dataRunningProcess {
     param (
@@ -2947,6 +2948,36 @@ function checkKerberos{
     }
 }
 
+#check storage of passwords and credentials
+function checkPrevStorOfPassAndCred {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extension ".txt"
+    writeToLog -str "running checkPrevStorOfPassAndCred function"
+    writeToScreen -str "Checking if storage of passwords and credentials are blocked..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= Prevent storage of passwords and credentials ============="
+    writeToFile -file $outputFile -path $folderLocation -str "Checking Network access: Do not allow storage of passwords and credentials for network authentication is enabled."
+    writeToFile -file $outputFile -path $folderLocation -str "This setting controls the storage of passwords and credentials for network authentication on the local system. Such credentials must not be stored on the local machine as that may lead to account compromise."
+    writeToFile -file $outputFile -path $folderLocation -str "For more information: https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
+    $reg = getRegValue -HKLM $true -regPath "\System\CurrentControlSet\Control\Lsa\" -regName "DisableDomainCreds"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > Do not allow storage of passwords and credentials for network authentication hardening is not configured"
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvOp -finding "Storage of network passwords and credentials is not configured." -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
+
+    }
+    else{
+        if($reg.DisableDomainCreds -eq 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > Do not allow storage of passwords and credentials for network authentication hardening is enabled - this is a good thing."
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvSt -finding "Storage of network passwords and credentials is disabled. (hardened)" -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Do not allow storage of passwords and credentials for network authentication hardening is disabled - This is a finding."
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvOp -finding "Storage of network passwords and credentials is enabled. (Configuration is disabled)" -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
+        }
+    }
+}
+
 ### General values
 # get hostname to use as the folder name and file names
 $hostname = hostname
@@ -3175,6 +3206,9 @@ dataSystemInfo -name "Systeminfo"
 
 #Get Kerberos secuirty settings
 checkKerberos -name "Domain-Hardening"
+
+# Check if credentials and password are stored in LSASS for network authentication.
+checkPrevStorOfPassAndCred  -name "Domain-Hardening"
 
 # Add Controls list to CSV file
 addControlsToCSV
