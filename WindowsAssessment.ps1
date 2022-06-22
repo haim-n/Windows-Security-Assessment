@@ -18,7 +18,6 @@ $Version = "1.37" # used for logging purposes
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
 -- Determine LDAP Signing and Channel Binding (https://4sysops.com/archives/secure-domain-controllers-with-ldap-channel-binding-and-ldap-signing)
--- * Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Test on Windows 2008
