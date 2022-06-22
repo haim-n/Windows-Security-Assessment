@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.36" # used for logging purposes
+$Version = "1.37" # used for logging purposes
 ###########################################################
 <# TODO: 
 - Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
@@ -18,17 +18,16 @@ $Version = "1.36" # used for logging purposes
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
 -- Determine LDAP Signing and Channel Binding (https://4sysops.com/archives/secure-domain-controllers-with-ldap-channel-binding-and-ldap-signing)
--- Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
+-- * Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
 -- Determine if Domain Admins cannot login to lower tier computers (Security-Policy inf file: Deny log on locally/remote/service/batch)
 - Test on Windows 2008
 - Consider adding AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Add check for mDNS? https://f20.be/blog/mdns
-- Add check for storage of passwords? https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376
 - Check AV/Defender configuration also on non-Windows 10/11, but on Windows Server
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings (in progress)
-- Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network, reg NC_ShowSharedAccessUI)
+- Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network - Done, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Enhance internet connectivity checks (use proxy configuration) - need to check proxy settings on multiple types of deployments 
 - Check for Lock with screen saver after time-out? (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
@@ -81,7 +80,7 @@ function writeToLog {
     )
     $stamp = (Get-Date).ToString("yyyy/MM/dd HH:mm:ss")
     $logMessage = "$stamp $str"
-    writeToFile -path $folderLocation -file "Log_$folderLocation.txt" -str $logMessage
+    writeToFile -path $folderRootLocation -file (getNameForFile -name "log" -extension ".txt") -str $logMessage
 }
 
 #Generate file name based on convention
@@ -154,28 +153,26 @@ function addToCSV {
 }
 
 function addControlsToCSV {
-    addToCSV -category "Controls" -checkID  "control_OSupdate" -checkName "OS Update" -finding "Ensure OS is up to date" -risk $csvR1 -relatedFile "hotfixes" -comment "shows recent updates"
-    addToCSV -category "Controls" -checkID  "control_NetSession" -checkName "Net Session permissions" -finding "Ensure Net Session permissions are hardened" -risk $csvR1 -relatedFile "NetSession" 
-    addToCSV -category "Controls" -checkID  "control_SAMEnum" -checkName "SAM enumeration" -finding "Ensure SAM enumeration permissions are hardened" -risk $csvR1 -relatedFile "SAM-Enumeration"
-    addToCSV -category "Controls" -checkID  "control_RDPTimeOut" -checkName "RDP timeout" -finding "Ensure RDP timeout for disconnected sessions is configured" -risk $csvR1 -relatedFile "RDP"
-    addToCSV -category "Controls" -checkID  "control_AuditPol" -checkName "Audit policy" -finding "Ensure audit policy is sufficient (need admin permission to run)" -risk $csvR1 -relatedFile "Audit-Policy"
-    addToCSV -category "Controls" -checkID  "control_LocalUsers" -checkName "Local users" -finding "Ensure local users are all disabled or have their password rotated" -risk $csvR1 -relatedFile "Local-Users, Security-Policy.inf" -comment "Local users and cannot connect over the network: Deny access to this computer from the network "
-    addToCSV -category "Controls" -checkID  "control_CredDel" -checkName "Credential delegation" -finding "Ensure Credential delegation is not configured or disabled (need admin permission to run)" -risk $csvR1 -relatedFile "GPResult" -comment "Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM"
-    addToCSV -category "Controls" -checkID  "control_LocalAdminRes" -checkName "Local administrators in Restricted groups" -finding "Ensure local administrators group is configured as a restricted group with fixed members (need admin permission to run)" -risk $csvR1 -relatedFile "Security-Policy.inf" -comment "Restricted Groups"
-    addToCSV -category "Controls" -checkID  "control_UAC" -checkName "UAC enforcement " -finding "Ensure UAC is enabled (need admin permission to run)" -risk $csvR1 -relatedFile "Security-Policy.inf" -comment "User Account Control settings"
-    addToCSV -category "Controls" -checkID  "control_LocalAV" -checkName "Local Antivirus" -finding "Ensure Antivirus is running and updated, advanced Windows Defender features are utilized" -risk $csvR1 -relatedFile "AntiVirus file"
-    addToCSV -category "Controls" -checkID  "control_DomainAdminsAcc" -checkName "Domain admin access" -finding "Ensure Domain Admins cannot login to lower tier computers (need admin permission to run)" -risk $csvR1 -relatedFile "Security-Policy.inf" -comment "Deny log on locally/remote/service/batch"
-    addToCSV -category "Controls" -checkID  "control_SvcAcc" -checkName "Service Accounts" -finding "Ensure service Accounts cannot login interactively (need admin permission to run)" -risk $csvR1 -relatedFile "Security-Policy inf" -comment "Deny log on locally/remote"
-    addToCSV -category "Controls" -checkID  "control_LocalAndDomainPassPol" -checkName "Local and domain password policies" -finding "Ensure local and domain password policies are sufficient " -risk $csvR1 -relatedFile "AccountPolicy"
-    addToCSV -category "Controls" -checkID  "control_SharePerm" -checkName "Overly permissive shares" -finding "No overly permissive shares exists " -risk $csvR1 -relatedFile "Shares"
-    addToCSV -category "Controls" -checkID  "control_ClearPass" -checkName "No clear-text passwords" -finding "No clear-text passwords are stored in files (if the EnableSensitiveInfoSearch was set)" -risk $csvR1 -relatedFile "Sensitive-Info"
-    addToCSV -category "Controls" -checkID  "control_NumOfUsersAndGroups" -checkName "Reasonable number or users/groups" -finding "Reasonable number or users/groups have local admin permissions " -risk $csvR1 -relatedFile "Local-Users"
-    addToCSV -category "Controls" -checkID  "control_UserRights" -checkName "User Rights Assignment" -finding "User Rights Assignment privileges don't allow privilege escalation by non-admins (need admin permission to run)" -risk $csvR1 -relatedFile "Security-Policy.inf" -comment "User Rights Assignment"
-    addToCSV -category "Controls" -checkID  "control_SvcPer" -checkName "Service with overly permissive privileges" -finding "Ensure services are not running with overly permissive privileges" -risk $csvR1 -relatedFile "Services"
-    addToCSV -category "Controls" -checkID  "control_MalProcSrvSoft" -checkName "Irrelevant/malicious processes/services/software" -finding "Ensure no irrelevant/malicious processes/services/software exists" -risk $csvR1 -relatedFile "Services, Process-list, Software, Netstat"
-    addToCSV -category "Controls" -checkID  "control_EventLog" -checkName "Event Log" -finding "Ensure logs are exported to SIEM" -risk $csvR1 -relatedFile "Audit-Policy"
-    addToCSV -category "Controls" -checkID  "control_HostFW" -checkName "Host firewall" -finding "Host firewall rules are configured to block/filter inbound (Host Isolation)" -risk $csvR1 -relatedFile "indows-Firewall, Windows-Firewall-Rules"
-    addToCSV -category "Controls" -checkID  "control_Macros" -checkName "Macros are restricted" -finding "Ensure office macros are restricted" -risk $csvR1 -relatedFile "GPResult, currently WIP"
+    addToCSV -category "Machine Hardening - Patching" -checkID  "control_OSupdate" -checkName "OS Update" -finding "Ensure OS is up to date" -risk $csvR4 -relatedFile "hotfixes" -comment "shows recent updates" -status $csvUn
+    addToCSV -category "Machine Hardening - Operation system" -checkID  "control_NetSession" -checkName "Net Session permissions" -finding "Ensure Net Session permissions are hardened" -risk $csvR3 -relatedFile "NetSession" -status $csvUn
+    addToCSV -category "Machine Hardening - Audit" -checkID  "control_AuditPol" -checkName "Audit policy" -finding "Ensure audit policy is sufficient (need admin permission to run)" -risk $csvR3 -relatedFile "Audit-Policy" -status $csvUn
+    addToCSV -category "Machine Hardening - Users" -checkID  "control_LocalUsers" -checkName "Local users" -finding "Ensure local users are all disabled or have their password rotated" -risk $csvR4 -relatedFile "Local-Users, Security-Policy.inf" -comment "Local users and cannot connect over the network: Deny access to this computer from the network " -status $csvUn
+    addToCSV -category "Machine Hardening - Authentication" -checkID  "control_CredDel" -checkName "Credential delegation" -finding "Ensure Credential delegation is not configured or disabled (need admin permission to run)" -risk $csvR3 -relatedFile "GPResult" -comment "Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM" -status $csvUn
+    addToCSV -category "Machine Hardening - Users" -checkID  "control_LocalAdminRes" -checkName "Local administrators in Restricted groups" -finding "Ensure local administrators group is configured as a restricted group with fixed members (need admin permission to run)" -risk $csvR2 -relatedFile "Security-Policy.inf" -comment "Restricted Groups" -status $csvUn
+    addToCSV -category "Machine Hardening - Security" -checkID  "control_UAC" -checkName "UAC enforcement " -finding "Ensure UAC is enabled (need admin permission to run)" -risk $csvR3 -relatedFile "Security-Policy.inf" -comment "User Account Control settings" -status $csvUn
+    addToCSV -category "Machine Hardening - Security" -checkID  "control_LocalAV" -checkName "Local Antivirus" -finding "Ensure Antivirus is running and updated, advanced Windows Defender features are utilized" -risk $csvR5 -relatedFile "AntiVirus file" -status $csvUn
+    addToCSV -category "Machine Hardening - Users" -checkID  "control_DomainAdminsAcc" -checkName "Domain admin access" -finding "Ensure Domain Admins cannot login to lower tier computers (need admin permission to run)" -risk $csvR4 -relatedFile "Security-Policy.inf" -comment "Deny log on locally/remote/service/batch" -status $csvUn
+    addToCSV -category "Machine Hardening - Operation system" -checkID  "control_SvcAcc" -checkName "Service Accounts" -finding "Ensure service Accounts cannot login interactively (need admin permission to run)" -risk $csvR4 -relatedFile "Security-Policy inf" -comment "Deny log on locally/remote" -status $csvUn
+    addToCSV -category "Machine Hardening - Authentication" -checkID  "control_LocalAndDomainPassPol" -checkName "Local and domain password policies" -finding "Ensure local and domain password policies are sufficient " -risk $csvR3 -relatedFile "AccountPolicy" -status $csvUn
+    addToCSV -category "Machine Hardening - Operation system" -checkID  "control_SharePerm" -checkName "Overly permissive shares" -finding "No overly permissive shares exists " -risk $csvR3 -relatedFile "Shares" -status $csvUn
+    addToCSV -category "Machine Hardening - Authentication" -checkID  "control_ClearPass" -checkName "No clear-text passwords" -finding "No clear-text passwords are stored in files (if the EnableSensitiveInfoSearch was set)" -risk $csvR5 -relatedFile "Sensitive-Info" -status $csvUn
+    addToCSV -category "Machine Hardening - Users" -checkID  "control_NumOfUsersAndGroups" -checkName "Reasonable number or users/groups" -finding "Reasonable number or users/groups have local admin permissions " -risk $csvR3 -relatedFile "Local-Users" -status $csvUn
+    addToCSV -category "Machine Hardening - Users" -checkID  "control_UserRights" -checkName "User Rights Assignment" -finding "User Rights Assignment privileges don't allow privilege escalation by non-admins (need admin permission to run)" -risk $csvR4 -relatedFile "Security-Policy.inf" -comment "User Rights Assignment" -status $csvUn
+    addToCSV -category "Machine Hardening - Operation system" -checkID  "control_SvcPer" -checkName "Service with overly permissive privileges" -finding "Ensure services are not running with overly permissive privileges" -risk $csvR3 -relatedFile "Services" -status $csvUn
+    addToCSV -category "Machine Hardening - Operation system" -checkID  "control_MalProcSrvSoft" -checkName "Irrelevant/malicious processes/services/software" -finding "Ensure no irrelevant/malicious processes/services/software exists" -risk $csvR4 -relatedFile "Services, Process-list, Software, Netstat" -status $csvUn
+    addToCSV -category "Machine Hardening - Audit" -checkID  "control_EventLog" -checkName "Event Log" -finding "Ensure logs are exported to SIEM" -risk $csvR2 -relatedFile "Audit-Policy" -status $csvUn
+    addToCSV -category "Machine Hardening - Network Access" -checkID  "control_HostFW" -checkName "Host firewall" -finding "Host firewall rules are configured to block/filter inbound (Host Isolation)" -risk $csvR4 -relatedFile "indows-Firewall, Windows-Firewall-Rules" -status $csvUn
+    addToCSV -category "Machine Hardening - Operation system" -checkID  "control_Macros" -checkName "Macros are restricted" -finding "Ensure office macros are restricted" -risk $csvR4 -relatedFile "GPResult, currently WIP" -status $csvUn
 }
 
 
@@ -763,18 +760,18 @@ function checkCredentialGuard {
         if ($null -eq $DevGuard.SecurityServicesConfigured)
             {
                 writeToFile -file $outputFile -path $folderLocation -str "The WMI query for Device Guard settings has failed. Status unknown."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-wmi" -status $csvUn -finding "WMI query for Device Guard settings has failed." -risk $csvR3
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Credential Guard" -checkID "machine_LSA-CG-wmi" -status $csvUn -finding "WMI query for Device Guard settings has failed." -risk $csvR3
             }
         else {
             if (($DevGuard.SecurityServicesConfigured -contains 1) -and ($DevGuard.SecurityServicesRunning -contains 1))
             {
                 writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is configured and running. Which is good."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-wmi" -status $csvSt -finding "Credential Guard is configured and running." -risk $csvR3
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Credential Guard" -checkID "machine_LSA-CG-wmi" -status $csvSt -finding "Credential Guard is configured and running." -risk $csvR3
             }
         else
             {
                 writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-wmi" -status $csvOp -finding "Credential Guard is turned off." -risk $csvR3
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Credential Guard" -checkID "machine_LSA-CG-wmi" -status $csvOp -finding "Credential Guard is turned off." -risk $csvR3
         }    
         }
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw Device Guard Settings from WMI (Including Credential Guard) ============="
@@ -784,19 +781,19 @@ function checkCredentialGuard {
         if ($null -eq $DevGuardPS.DeviceGuardSecurityServicesRunning)
             {
                 writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-PS" -status $csvOp -finding "Credential Guard is turned off." -risk $csvR3
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Credential Guard" -checkID "machine_LSA-CG-PS" -status $csvOp -finding "Credential Guard is turned off." -risk $csvR3
         }
         else
         {
             if ($null -ne ($DevGuardPS.DeviceGuardSecurityServicesRunning | Where-Object {$_.tostring() -eq "CredentialGuard"}))
                 {
                     writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is configured and running. Which is good."
-                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-PS" -status $csvSt -finding "Credential Guard is configured and running." -risk $csvR3
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Credential Guard" -checkID "machine_LSA-CG-PS" -status $csvSt -finding "Credential Guard is configured and running." -risk $csvR3
                 }
             else
                 {
                     writeToFile -file $outputFile -path $folderLocation -str "Credential Guard is turned off. A possible finding."
-                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-PS" -status $csvOp -finding "Credential Guard is turned off." -risk $csvR3
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Credential Guard" -checkID "machine_LSA-CG-PS" -status $csvOp -finding "Credential Guard is turned off." -risk $csvR3
                 }
         }
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw Device Guard Settings from Get-ComputerInfo ============="
@@ -804,8 +801,8 @@ function checkCredentialGuard {
     }
     else{
         writeToLog -str "Function checkCredentialGuard: not supported OS no check is needed..."
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-PS" -status $csvOp -finding "OS not supporting Credential Guard." -risk $csvR3
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - Credential Guard" -checkID "machine_LSA-CG-wmi" -status $csvOp -finding "OS not supporting Credential Guard." -risk $csvR3
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Credential Guard" -checkID "machine_LSA-CG-PS" -status $csvOp -finding "OS not supporting Credential Guard." -risk $csvR3
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Credential Guard" -checkID "machine_LSA-CG-wmi" -status $csvOp -finding "OS not supporting Credential Guard." -risk $csvR3
     }
     
 }
@@ -832,7 +829,7 @@ function checkLSAProtectionConf {
             if ($RunAsPPL.RunAsPPL -eq 1)
                 {
                     writeToFile -file $outputFile -path $folderLocation -str "LSA protection is on. Which is good."
-                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - PPL" -checkID "machine_LSA-ppl" -status $csvSt -finding "LSA protection is on." -risk $csvR5
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "LSA Protection - PPL" -checkID "machine_LSA-ppl" -status $csvSt -finding "LSA protection is enabled." -risk $csvR5
 
                 }
             else
@@ -875,24 +872,24 @@ function checkInternetAccess{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server was successful. This may be considered a finding, at least on servers."
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
             writeToFile -file $outputFile -path $folderLocation -str ($test | Out-String)
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvOp -finding "Public DNS is accessible." -risk $currentRisk
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - DNS" -checkID "machine_na-dns" -status $csvOp -finding "Public DNS server (8.8.8.8) is accessible from the machine." -risk $currentRisk
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server received a timeout. This is generally good - direct access to internet DNS isn't allowed."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvSt -finding "Public DNS is not accessible." -risk $currentRisk
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - DNS" -checkID "machine_na-dns" -status $csvSt -finding "Public DNS is not accessible." -risk $currentRisk
         }
     }
     else{
         $result = nslookup google.com 8.8.8.8
         if ($result -like "*DNS request timed out*"){
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server received a timeout. This is generally good - direct access to internet DNS isn't allowed."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvSt -finding "Public DNS is not accessible." -risk $currentRisk
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - DNS" -checkID "machine_na-dns" -status $csvSt -finding "Public DNS is not accessible." -risk $currentRisk
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request to 8.8.8.8 DNS server didn't receive a timeout. This may be considered a finding, at least on servers."
             writeToFile -file $outputFile -path $folderLocation -str " > DNS request output: "
             writeToFile -file $outputFile -path $folderLocation -str ($result | Out-String)
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - DNS" -checkID "machine_na-dns" -status $csvOp -finding "Public DNS is accessible." -risk $currentRisk
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - DNS" -checkID "machine_na-dns" -status $csvOp -finding "Public DNS server (8.8.8.8) is accessible from the machine." -risk $currentRisk
         }
     }
     if($psVer -ge 4){
@@ -999,22 +996,22 @@ function checkInternetAccess{
             $naOutput += "; Port 8080: Blocked"
         }
         if($naStdPorts -and $naNStdPorts){
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvOp -finding "All ports are open for this machine: $naOutput." -risk $currentRisk
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - Browsing" -checkID "machine_na-browsing" -status $csvOp -finding "All ports are open for this machine: $naOutput." -risk $currentRisk
         }
         elseif ($naStdPorts){
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvUn -finding "Standard ports (e.g., 80,443) are open for this machine (bad for servers ok for workstations): $naOutput." -risk $currentRisk
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - Browsing" -checkID "machine_na-browsing" -status $csvUn -finding "Standard ports (e.g., 80,443) are open for this machine (bad for servers ok for workstations): $naOutput." -risk $currentRisk
         }
         elseif ($naNStdPorts){
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvOp -finding "None standard ports are open (maybe miss configuration?) for this machine (bad for servers ok for workstations): $naOutput." -risk $currentRisk
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - Browsing" -checkID "machine_na-browsing" -status $csvOp -finding "Non-standard ports are open (maybe miss configuration?) for this machine (bad for servers ok for workstations): $naOutput." -risk $currentRisk
         }
         else{
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvSt -finding "All browsing ports seem to be closed: $naOutput." -risk $currentRisk
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - Browsing" -checkID "machine_na-browsing" -status $csvSt -finding "Access to the arbitrary internet addresses is blocked over all ports that were tested (80, 443, 663, 8080)." -risk $currentRisk
         }
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str "PowerShell is lower then version 4. Other checks are not supported."
         writeToLog -str "Function checkInternetAccess: PowerShell executing the script does not support curl command. Skipping network connection test."
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Network Access" -checkName "Network Access - Browsing" -checkID "machine_na-browsing" -status $csvUn -finding "PowerShell executing the script does not support curl command. (e.g., PSv3 and below)." -risk $currentRisk
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Internet access - Browsing" -checkID "machine_na-browsing" -status $csvUn -finding "PowerShell executing the script does not support curl command. (e.g., PSv3 and below)." -risk $currentRisk
     }
     <#
     # very long test - skipping it for now 
@@ -1041,12 +1038,12 @@ function checkSMBHardening {
         if ($SMB1.SMB1 -eq 0)
             {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is not supported (based on registry values). Which is nice." 
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB1" -checkID "domain_SMBv1" -status $csvSt -finding "SMB1 Server is not supported." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB1" -checkID "domain_SMBv1" -status $csvSt -finding "SMB1 Server is not supported." -risk $csvR3
             }
         else
             {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB1 Server is supported (based on registry values). Which is pretty bad and a finding." 
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB1" -checkID "domain_SMBv1" -status $csvOp -finding "SMB1 Server is supported (based on registry values)." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB1" -checkID "domain_SMBv1" -status $csvOp -finding "SMB1 Server is supported (based on registry values)." -risk $csvR3
             }
         # unknown var will all return false always
         <#
@@ -1059,12 +1056,12 @@ function checkSMBHardening {
         if ($SMB2.SMB2 -eq 0)
             {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are not supported (based on registry values). Which is weird, but not a finding." 
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-reg" -status $csvOp -finding "SMB2 and SMB3 Server are not supported (based on registry values)." -risk $csvR4
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-reg" -status $csvOp -finding "SMB2 and SMB3 Server are not supported (based on registry values)." -risk $csvR1
             }
         else
             {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB2 and SMB3 Server are supported (based on registry values). Which is OK."
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-reg" -status $csvSt -finding "SMB2 and SMB3 Server are supported." -risk $csvR4
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-reg" -status $csvSt -finding "SMB2 and SMB3 Server are supported." -risk $csvR1
              }
         if($psVer -ge 4){
             $smbServerConfig = Get-SmbServerConfiguration
@@ -1072,16 +1069,16 @@ function checkSMBHardening {
             if (!$smbServerConfig.EnableSMB2Protocol)
                 {
                     writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is not supported (based on Get-SmbServerConfiguration). Which is weird, but not a finding." 
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -status $csvOp -finding "SMB2 Server is not supported (based on powershell)." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -status $csvOp -finding "SMB2 Server is not supported (based on powershell)." -risk $csvR1
                 }
             else
                 {
                     writeToFile -file $outputFile -path $folderLocation -str "SMB2 Server is supported (based on Get-SmbServerConfiguration). Which is OK." 
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -status $csvSt -finding "SMB2 Server is supported." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -status $csvSt -finding "SMB2 Server is supported." -risk $csvR1
                 }
         }
         else{
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -status $csvUn -finding "Running in Powershell 3 or lower - not supporting this test" -risk $csvR5
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -status $csvUn -finding "Running in Powershell 3 or lower - not supporting this test" -risk $csvR1
         }
         
     }
@@ -1089,7 +1086,7 @@ function checkSMBHardening {
     {
         writeToFile -file $outputFile -path $folderLocation -str "Old Windows versions (XP or 2003) support only SMB1." 
         writeToLog -str "Function checkSMBHardening: unable to run windows too old"
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -status $csvOp -finding "Old Windows versions (XP or 2003) support only SMB1." -risk $csvR5
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB supported versions - SMB2-3" -checkID "domain_SMBv2-3-PS" -status $csvOp -finding "Old Windows versions (XP or 2003) support only SMB1." -risk $csvR1
     }
     writeToFile -file $outputFile -path $folderLocation -str "============= SMB versions Support (Client Settings) ============="
     # Check if Windows Vista/2008 or above
@@ -1100,23 +1097,23 @@ function checkSMBHardening {
         {
             "0" {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Boot'. Which is weird. Disabled is better." 
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvOp -finding "SMB1 Client is set to 'Boot'." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvOp -finding "SMB1 Client is set to 'Boot'." -risk $csvR2
             }
             "1" {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'System'. Which is not weird. although disabled is better."
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvOp -finding "SMB1 Client is set to 'System'." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvOp -finding "SMB1 Client is set to 'System'." -risk $csvR2
             }
             "2" {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Automatic' (Enabled). Which is not very good, a possible finding, but not a must."
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvOp -finding "SMB1 Client is set to 'Automatic' (Enabled)." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvOp -finding "SMB 1 client is not disabled." -risk $csvR2
             }
             "3" {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Manual' (Turned off, but can be started). Which is pretty good, although disabled is better."
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvSt -finding "SMB1 Client is set to 'Manual' (Turned off, but can be started)." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvSt -finding "SMB1 Client is set to 'Manual' (Turned off, but can be started)." -risk $csvR2
             }
             "4" {
                 writeToFile -file $outputFile -path $folderLocation -str "SMB1 Client is set to 'Disabled'. Which is nice."
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvSt -finding "SMB1 Client is set to 'Disabled'." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB1 - Client" -checkID "domain_SMBv1-client" -status $csvSt -finding "SMB1 Client is set to 'Disabled'." -risk $csvR2
             }
         }
     }
@@ -1132,7 +1129,7 @@ function checkSMBHardening {
     {
         writeToFile -file $outputFile -path $folderLocation -str "Microsoft network server: Digitally sign communications (always) = Enabled"
         writeToFile -file $outputFile -path $folderLocation -str "SMB signing is required by the server, Which is good." 
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB2 - Server signing" -checkID "domain_SMBv2-srvSign" -status $csvSt -finding "SMB signing is required by the server." 
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB2 - Server signing" -checkID "domain_SMBv2-srvSign" -status $csvSt -finding "SMB signing is required by the server." -risk $csvR4
 
     }
     else
@@ -1166,7 +1163,7 @@ function checkSMBHardening {
     {
         writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Enabled"
         writeToFile -file $outputFile -path $folderLocation -str "SMB signing is required by the client, Which is good." 
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv2-clientSign" -status $csvSt -finding "SMB signing is required by the client" -risk $csvR4
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv2-clientSign" -status $csvSt -finding "SMB signing is required by the client" -risk $csvR3
     }
     else
     {
@@ -1175,14 +1172,14 @@ function checkSMBHardening {
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Disabled" 
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (if client agrees) = Enabled"
             writeToFile -file $outputFile -path $folderLocation -str "SMB signing is enabled by the client, but not required. This computer is susceptible to man-in-the-middle attacks against servers that don't require signing. A possible finding."
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv2-clientSign" -status $csvOp -finding "SMB signing is enabled by the client, but not required."  -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv2-clientSign" -status $csvOp -finding "SMB signing is enabled by the client, but not required."  -risk $csvR3
         }
         else
         {
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (always) = Disabled." 
             writeToFile -file $outputFile -path $folderLocation -str "Microsoft network client: Digitally sign communications (if client agrees) = Disabled." 
             writeToFile -file $outputFile -path $folderLocation -str "SMB signing is disabled by the client. This computer is susceptible to man-in-the-middle attacks. A finding."
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv2-clientSign" -status $csvOp -finding "SMB signing is disabled by the client." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - SMB" -checkName "SMB2 - Client signing" -checkID "domain_SMBv2-clientSign" -status $csvOp -finding "SMB signing is disabled by the client." -risk $csvR3
         }
     }
     if ($psVer -ge 4 -and($null -ne $smbServerConfig) -and ($null -ne $smbClientConfig)) {
@@ -1218,11 +1215,11 @@ function checkRDPSecurity {
     if($null -ne $reg -and $reg.fDenyTSConnections -eq 1)
     {
         writeToFile -file $outputFile -path $folderLocation -str " > RDP Is disabled on this machine."
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP Status" -checkID "machine_RDP-reg" -status $csvSt -finding "RDP Is disabled on this machine." -risk $csvR1 
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP status" -checkID "machine_RDP-reg" -status $csvSt -finding "RDP Is disabled on this machine." -risk $csvR1 
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > RDP Is enabled on this machine."
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP Status" -checkID "machine_RDP-reg" -finding "RDP Is enabled on this machine." -risk $csvR1
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP status" -checkID "machine_RDP-reg" -finding "RDP Is enabled on this machine." -risk $csvR1
 
     }
     writeToFile -file $outputFile -path $folderLocation -str "============= Remote Desktop Users ============="
@@ -1265,52 +1262,57 @@ function checkRDPSecurity {
         }
     }
     if($rdpGenUsersFlag -and $rdpAdmins){
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP Allowed Users" -checkID "machine_RDP-Users" -status $csvOp -finding "RDP Allowed users is highly permissive: $rdpGenUsersStr additionally local admin are allows to remotely login the rest of the allowed RDP list (not including default groups like administrators):$rdpUsers." -risk $csvR3
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP allowed users" -checkID "machine_RDP-Users" -status $csvOp -finding "RDP Allowed users is highly permissive: $rdpGenUsersStr additionally local admin are allows to remotely login the rest of the allowed RDP list (not including default groups like administrators):$rdpUsers" -risk $csvR3
     }
     elseif($rdpGenUsersFlag){
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP Allowed Users" -checkID "machine_RDP-Users" -status $csvOp -finding "RDP Allowed users is highly permissive: $rdpGenUsersStr rest of the allowed RDP list(not including default groups like administrators):$rdpUsers." -risk $csvR3
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP allowed users" -checkID "machine_RDP-Users" -status $csvOp -finding "RDP Allowed users is highly permissive: $rdpGenUsersStr rest of the allowed RDP list(not including default groups like administrators):$rdpUsers" -risk $csvR3
     }
     elseif($rdpAdmins){
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP Allowed Users" -checkID "machine_RDP-Users" -status $csvOp -finding "Local admin are allows to remotely login the the allowed RDP users and groups list(not including default groups like administrators):$rdpUsers."  -risk $csvR3
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP allowed users" -checkID "machine_RDP-Users" -status $csvOp -finding "Local admin are allows to remotely login the the allowed RDP users and groups list(not including default groups like administrators):$rdpUsers"  -risk $csvR3
     }
     else{
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP Allowed Users" -checkID "machine_RDP-Users" -status $csvUn -finding "Allowed RDP users and groups list(not including default groups like administrators):$rdpUsers." -risk $csvR3
+        if($rdpUsers -eq ""){
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP allowed users" -checkID "machine_RDP-Users" -status $csvUn -finding "Only Administrators of the machine are allowed to RDP" -risk $csvR3
+        }
+        else{
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP allowed users" -checkID "machine_RDP-Users" -status $csvUn -finding "Allowed RDP users and groups list(not including default groups like administrators):$rdpUsers" -risk $csvR3
+        }
     }
      
     writeToFile -file $outputFile -path $folderLocation -str "============= NLA (Network Level Authentication) ============="
     if ($RDP.UserAuthenticationRequired -eq 1)
         {
             writeToFile -file $outputFile -path $folderLocation -str "NLA is required, which is fine."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Network Level Authentication" -checkID "machine_RDP-NLA" -status $csvSt -finding "NLA is required." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Network Level Authentication" -checkID "machine_RDP-NLA" -status $csvSt -finding "NLA is required for RDP connections." -risk $csvR2
         }
     if ($RDP.UserAuthenticationRequired -eq 0)
         {
             writeToFile -file $outputFile -path $folderLocation -str "NLA is not required, which is bad. A possible finding."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Network Level Authentication" -checkID "machine_RDP-NLA" -status $csvOp -finding "NLA is not required." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Network Level Authentication" -checkID "machine_RDP-NLA" -status $csvOp -finding "NLA is not required for RDP connections." -risk $csvR2
 
         }
         writeToFile -file $outputFile -path $folderLocation -str "============= Security Layer (SSL/TLS) ============="
     if ($RDP.SecurityLayer -eq 0)
         {
             writeToFile -file $outputFile -path $folderLocation -str "Native RDP encryption is used instead of SSL/TLS, which is bad. A possible finding."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -status $csvOp -finding "Native RDP encryption is used instead of SSL/TLS." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -status $csvOp -finding "Native RDP encryption is used instead of SSL/TLS." -risk $csvR2
          }
     if ($RDP.SecurityLayer -eq 1)
         {
             writeToFile -file $outputFile -path $folderLocation -str "SSL/TLS is supported, but not required ('Negotiate' setting). Which is not recommended, but not necessary a finding."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -status $csvOp -finding "SSL/TLS is supported, but not required." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -status $csvOp -finding "SSL/TLS is supported, but not required." -risk $csvR2
         }
     if ($RDP.SecurityLayer -eq 2)
         {
             writeToFile -file $outputFile -path $folderLocation -str "SSL/TLS is required for connecting. Which is good."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -status $csvSt -finding "SSL/TLS is required for connecting." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Security Layer (SSL/TLS)" -checkID "machine_RDP-TLS" -status $csvSt -finding "SSL/TLS is required for RDP connections." -risk $csvR2
         }
         writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Timeout Settings (from Registry) ============="
     $RDPTimeout = Get-Item "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services"
     if ($RDPTimeout.ValueCount -eq 0)
         {
             writeToFile -file $outputFile -path $folderLocation -str "RDP timeout is not configured. A possible finding."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Timeout" -checkID "machine_RDP-Timeout" -status $csvOp -finding "RDP timeout is not configured." -risk $csvR3
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Timeout" -checkID "machine_RDP-Timeout" -status $csvOp -finding "RDP timeout is not configured." -risk $csvR4
 
     }
     else
@@ -1323,7 +1325,7 @@ function checkRDPSecurity {
         writeToFile -file $outputFile -path $folderLocation -str "fResetBroken = Log off session (instead of disconnect) when time limits are reached" 
         writeToFile -file $outputFile -path $folderLocation -str "60000 = 1 minute, 3600000 = 1 hour, etc."
         writeToFile -file $outputFile -path $folderLocation -str "`r`nFor further information, see the GPO settings at: Computer Configuration\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session\Session Time Limits"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Timeout" -checkID "machine_RDP-Timeout" -status $csvSt -finding "RDP timeout is configured - Check manual file to find specific configuration" -risk $csvR3
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - RDP" -checkName "RDP - Timeout" -checkID "machine_RDP-Timeout" -status $csvSt -finding "RDP timeout is configured - Check manual file to find specific configuration" -risk $csvR4
     } 
     writeToFile -file $outputFile -path $folderLocation -str "============= Raw RDP Settings (from WMI) ============="
     writeToFile -file $outputFile -path $folderLocation -str ($RDP | Format-List Terminal*,*Encrypt*, Policy*,Security*,SSL*,*Auth* | Out-String )
@@ -1396,7 +1398,7 @@ function checkAntiVirusStatus {
         if ($null -eq $AntiVirusProducts)
             {
                 writeToFile -file $outputFile -path $folderLocation -str "No Anti Virus products were found."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvOp -finding "No AntiVirus detected on machine."   -risk $csvR2
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvOp -finding "No AntiVirus detected on machine."   -risk $csvR5
             }
         writeToFile -file $outputFile -path $folderLocation -str "============= Antivirus Products Status ============="
         $sumOutput = ""
@@ -1428,16 +1430,16 @@ function checkAntiVirusStatus {
         }
         if($sumOutput -ne ""){
             if($outOfDateAV -and $notEnabledAV){
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvOp -finding "AntiVirus is not enabled and not up to date `n $sumOutput." -risk $csvR2
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvOp -finding "AntiVirus is not enabled and not up to date `n $sumOutput." -risk $csvR5
             }
             elseif ($outOfDateAV) {
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvOp -finding "AntiVirus is not up to date `n $sumOutput." -risk $csvR2
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvOp -finding "AntiVirus is not up to date `n $sumOutput." -risk $csvR5
             }
             elseif ($notEnabledAV){
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvOp -finding "AntiVirus is not enabled `n $sumOutput." -risk $csvR2
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvOp -finding "AntiVirus is not enabled `n $sumOutput." -risk $csvR5
             }
             else{
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvSt -finding "AntiVirus is up to date and enabled `n $sumOutput." -risk $csvR2
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvSt -finding "AntiVirus is up to date and enabled `n $sumOutput." -risk $csvR5
             }
         }
         
@@ -1499,7 +1501,7 @@ function checkAntiVirusStatus {
         writeToFile -file $outputFile -path $folderLocation -str $MpPreference.AttackSurfaceReductionOnlyExclusions
     }
     else{
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvUn -finding "AntiVirus test is currently not running on servers"   -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Security" -checkName "AntiVirus installed system" -checkID "machine_AVName" -status $csvUn -finding "AntiVirus test is currently not running on server."   -risk $csvR5
     }
 }
 
@@ -1521,7 +1523,7 @@ function checkLLMNRAndNetBIOS {
     if ($LLMNR_Enabled -eq 0)
         {
             writeToFile -file $outputFile -path $folderLocation -str "LLMNR is disabled, which is secure."
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - Network" -checkName "LLMNR" -checkID "domain_LLMNR" -status $csvSt -finding "LLMNR is disabled, which is secure." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - Network" -checkName "LLMNR" -checkID "domain_LLMNR" -status $csvSt -finding "LLMNR is disabled." -risk $csvR4
 
     }
     else
@@ -1537,7 +1539,7 @@ function checkLLMNRAndNetBIOS {
     if ($NodeType -eq 2)
         {
             writeToFile -file $outputFile -path $folderLocation -str "NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server), which is secure."
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - Network" -checkName "NetBIOS Node type" -checkID "domain_NetBIOSNT" -status $csvSt -finding "NetBIOS Node Type is set to P-node (only point-to-point name queries to a WINS name server)" -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - Network" -checkName "NetBIOS Node type" -checkID "domain_NetBIOSNT" -status $csvSt -finding "NetBIOS Name Service is disabled (node type set to P-node)." -risk $csvR4
         }
     else
     {
@@ -1593,7 +1595,7 @@ function checkWDigest {
         if (($winVersion.Major -ge 10) -or (($winVersion.Major -eq 6) -and ($winVersion.Minor -eq 3)))
             {
                 writeToFile -file $outputFile -path $folderLocation -str  "The WDigest protocol is turned off by default for Win8.1/2012R2 and above. So it is OK, but still recommended to set the UseLogonCredential registry value to 0, to revert malicious attempts of enabling WDigest."
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvSt -finding "The WDigest protocol is turned off by default for Win8.1/2012R2 and above." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvSt -comment "The WDigest protocol is turned off by default for Win8.1/2012R2 and above." -risk $csvR5
             }
         else
         {
@@ -1601,13 +1603,13 @@ function checkWDigest {
             if (($winVersion.Major -eq 6) -and ($winVersion.Minor -ge 1))    
                 {
                     writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012. A possible finding."
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvOp -finding "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012." -risk $csvR5
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvOp -finding "WDigest stores cleartext user credentials in memory by default in Win7/2008/8/2012." -risk $csvR5
                 }
             else
             {
                 writeToFile -file $outputFile -path $folderLocation -str "The operating system version is not supported. You have worse problems than WDigest configuration."
                 writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS."
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvOp -finding "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS." -risk $csvR5
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvOp -finding "WDigest stores cleartext user credentials in memory by default, but this configuration cannot be hardened since it is a legacy OS." -risk $csvR5
 
             }
         }
@@ -1618,14 +1620,14 @@ function checkWDigest {
         {
             writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry key set to 0."
             writeToFile -file $outputFile -path $folderLocation -str "WDigest doesn't store cleartext user credentials in memory, which is good. The setting was intentionally hardened."
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvSt -finding "WDigest doesn't store cleartext user credentials in memory." -risk $csvR5
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvSt -finding "WDigest doesn't store cleartext user credentials in memory." -risk $csvR5
 
         }
         if ($WDigest.UseLogonCredential -eq 1)
         {
             writeToFile -file $outputFile -path $folderLocation -str "WDigest UseLogonCredential registry key set to 1."
             writeToFile -file $outputFile -path $folderLocation -str "WDigest stores cleartext user credentials in memory, which is bad and a finding. The configuration was either intentionally configured by an admin for some reason, or was set by a threat actor to fetch clear-text credentials."
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvOp -finding "WDigest stores cleartext user credentials in memory." -risk $csvR5
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "WDigest Clear-Text passwords in LSASS" -checkID "domain_WDigest" -status $csvOp -finding "WDigest stores cleartext user credentials in memory." -risk $csvR5
         }
     }
     
@@ -1687,7 +1689,7 @@ function checkSAMEnum{
         if (($winVersion.Major -ge 10) -and ($winVersion.Build -ge 14393))
             {
                 writeToFile -file $outputFile -path $folderLocation -str "This OS version is hardened by default."
-                addToCSV -relatedFile $outputFile -category "Domain Hardening - Enumeration" -checkName "SAM enumeration permissions" -checkID "domain_SAMEnum" -status $csvSt -finding "Using default settings - this OS version is hardened by default." -risk $csvR4
+                addToCSV -relatedFile $outputFile -category "Domain Hardening - Enumeration" -checkName "SAM enumeration permissions" -checkID "domain_SAMEnum" -status $csvSt -comment "Remote SAM enumeration permissions are hardened, as the default OS settings." -risk $csvR4
         }
         else
             {
@@ -1725,12 +1727,12 @@ function checkPowershellVer {
     {
         $temp = Start-Job {Get-Host} -PSVersion 2.0 -Name "PSv2Check"
         writeToFile -file $outputFile -path $folderLocation -str "PowerShell version 2 is installed and was able to run commands. This is a finding!"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Operation system" -checkName "Powershell version 2 support - 1" -checkID "machine_PSv2.1" -status $csvOp -finding "PowerShell version 2 is installed and was able to run commands." -risk $csvR5
+        #addToCSV -relatedFile $outputFile -category "Machine Hardening - Operation system" -checkName "Powershell version 2 support - 1" -checkID "machine_PSv2.1" -status $csvOp -finding "PowerShell version 2 is installed and was able to run commands." -risk $csvR4
     }
     catch
     {
         writeToFile -file $outputFile -path $folderLocation -str "PowerShell version 2 was not able to run. This is secure."
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Operation system" -checkName "Powershell version 2 support - 1" -checkID "machine_PSv2.1" -status $csvSt -finding "PowerShell version 2 was not able to run." -risk $csvR5
+        #addToCSV -relatedFile $outputFile -category "Machine Hardening - Operation system" -checkName "Powershell version 2 support - 1" -checkID "machine_PSv2.1" -status $csvSt -finding "PowerShell version 2 was not able to run." -risk $csvR4
     }
     finally
     {
@@ -1786,12 +1788,12 @@ function checkPowershellVer {
     if (($LegacyPowerShell.PowerShellVersion -eq "2.0") -or ($LegacyPowerShell.PowerShellVersion -eq "1.0"))
     {
         writeToFile -file $outputFile -path $folderLocation -str ("PowerShell version " + $LegacyPowerShell.PowerShellVersion + " is installed, based on the registry value mentioned above.")
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Operation system" -checkName "Powershell version 2 support - 2" -checkID "machine_PSv2.2" -status $csvOp -finding ("PowerShell version " + $LegacyPowerShell.PowerShellVersion + " is installed, based on the registry value.") -risk $csvR5
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Operation system" -checkName "Powershell version 2 support - 2" -checkID "machine_PSv2" -status $csvOp -finding ("PowerShell version " + $LegacyPowerShell.PowerShellVersion + " is installed, based on the registry value.") -risk $csvR4
     }
     else
     {
         writeToFile -file $outputFile -path $folderLocation -str "PowerShell version 1/2 is not installed." 
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Operation system" -checkName "Powershell version 2 support - 2" -checkID "machine_PSv2.2" -status $csvSt -finding ("PowerShell version 1/2 is not installed.") -risk $csvR5
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Operation system" -checkName "Powershell version 2 support - 2" -checkID "machine_PSv2" -status $csvSt -finding ("PowerShell version 1/2 is not installed.") -risk $csvR4
     }
     
 }
@@ -1811,42 +1813,50 @@ function checkNTLMv2 {
     $temp = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Control\Lsa" -regName "LmCompatibilityLevel"
     if(!($partOfDomain)){
         writeToFile -file $outputFile -path $folderLocation -str " > Machine is not part of a domain." #using system default depends on OS version
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "Machine is not part of a domain." -risk $csvR4
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "Machine is not part of a domain." -risk $csvR1
     }
     else{
+        if($isDomainController){
+            $statusLevel34 = $csvOp
+            $riskLevel34 = $csvR2
+        }
+        else{
+            $statusLevel34 = $csvSt
+            $riskLevel34 = $csvR2
+        }
         if($null -eq $temp){
             writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default. On Windows 2008/7 and above, default is to send NTLMv2 only (Level 3), which is quite secure. `r`n" #using system default depends on OS version
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "NTLM Authentication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default. On Windows 2008/7 and above, default is to send NTLMv2 only (Level 3)." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "NTLM Authentication setting: (Level Unknown) LM and NTLMv1 restriction does not exist - using OS default. On Windows 2008/7 and above, default is to send NTLMv2 only (Level 3)." -risk $csvR4
         }
         else{
             switch ($temp.lmcompatibilitylevel) {
                 (0) { 
                     writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 0) Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "Send LM and NTLM response; never use NTLM 2 session security. Clients use LM and NTLM authentication, and never use NTLM 2 session security. (Level 0)" -risk $csvR4
                 }
                 (1) { 
                     writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 1) Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "Use NTLM 2 session security if negotiated. Clients use LM and NTLM authentication, and use NTLM 2 session security if the server supports it.(Level 1)" -risk $csvR4
                 }
                 (2) { 
                     writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - this is a finding!`r`n"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "(Level 2) Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $csvOp -finding "Send NTLM response only. Clients use only NTLM authentication, and use NTLM 2 session security if the server supports it.(Level 2)" -risk $csvR4
                 }
                 (3) { 
                     writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it; domain controllers accept LM, NTLM, and NTLM 2 authentication. - Not a finding if all servers are with the same configuration.`r`n"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 3) Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $statusLevel34 -finding "Send NTLM 2 response only. Clients use NTLM 2 authentication, and use NTLM 2 session security if the server supports it.(Level 3)" -risk $riskLevel34
                 }
                 (4) { 
                     writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it; domain controllers refuse LM authentication (that is, they accept NTLM and NTLM 2) - Not a finding if all servers are with the same configuration. If this is a DC, it means that LM is not applicable in the domain at all.`r`n"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 4) Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $statusLevel34 -finding "Domain controllers refuse LM responses. Clients use NTLM authentication, and use NTLM 2 session security if the server supports it.(Level 4)" -risk $riskLevel34
                 }
                 (5) { 
                     writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it; domain controllers refuse NTLM and LM authentication (they accept only NTLM 2 - This is the most hardened configuration. If this is a DC, it means that NTLMv2 and LM are not applicable in the domain at all.)`r`n"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "(Level 5) Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $csvSt -finding "Domain controllers refuse LM and NTLM responses (accept only NTLM 2). Clients use NTLM 2 authentication, use NTLM 2 session security if the server supports it.(Level 5)" -risk $csvR4
                 }
                 Default {
                     writeToFile -file $outputFile -path $folderLocation -str " > NTLM Authentication setting: (Level Unknown) - " + $temp.lmcompatibilitylevel + "`r`n"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "NTLM Compatibility level" -checkID "domain_NTLMComLevel" -status $csvUn -finding ("(Level Unknown) :" + $temp.lmcompatibilitylevel +".")  -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "NTLM compatibility level" -checkID "domain_NTLMComLevel" -status $csvUn -finding ("(Level Unknown) :" + $temp.lmcompatibilitylevel +".")  -risk $csvR4
 
                 }
             }
@@ -1872,17 +1882,17 @@ function checkGPOReprocess {
     $temp = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}" -regName "NoGPOListChanges"
     if ($null -eq $temp) {
         writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is not configured - settings left as default. Can be considered a finding.'
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - General" -checkName "GPO reprocess enforcement - Registry policy" -checkID "domain_GPOReRegistry" -status $csvSt -finding "GPO registry policy reprocess is not configured - settings left as default." -risk $csvR4
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - General" -checkName "GPO reprocess enforcement - Registry policy" -checkID "domain_GPOReRegistry" -status $csvSt -finding "GPO registry policy reprocess is not configured." -risk $csvR3
     }
     else {
         if ($temp.NoGPOListChanges -eq 0) {
             writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is enabled - this is the hardened configuration.'
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - General" -checkName "GPO reprocess enforcement - Registry policy" -checkID "domain_GPOReRegistry" -status $csvSt -finding "GPO registry policy reprocess is enabled." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - General" -checkName "GPO reprocess enforcement - Registry policy" -checkID "domain_GPOReRegistry" -status $csvSt -finding "GPO registry policy reprocess is enabled." -risk $csvR3
 
         }
         else {
             writeToFile -file $outputFile -path $folderLocation -str ' > GPO registry policy reprocess is disabled (this setting was set on purpose). Can be considered a finding.'
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - General" -checkName "GPO reprocess enforcement - Registry policy" -checkID "domain_GPOReRegistry" -status $csvOp -finding "GPO registry policy reprocess is disabled (this setting was set on purpose)." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - General" -checkName "GPO reprocess enforcement - Registry policy" -checkID "domain_GPOReRegistry" -status $csvOp -finding "GPO registry policy reprocess is disabled (this setting was set on purpose)." -risk $csvR3
 
         }
     }
@@ -1891,7 +1901,7 @@ function checkGPOReprocess {
     $temp = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\Group Policy\{42B5FAAE-6536-11d2-AE5A-0000F87571E3}" -regName "NoGPOListChanges"
     if ($null -eq $temp) {
         writeToFile -file $outputFile -path $folderLocation -str ' > GPO script policy reprocess is not configured - settings left as default. Can be considered a finding.'
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - General" -checkName "GPO reprocess enforcement - Script policy" -checkID "domain_GPOReScript" -status $csvOp -finding "GPO script policy reprocess is not configured - settings left as default." -risk $csvR3
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - General" -checkName "GPO reprocess enforcement - Script policy" -checkID "domain_GPOReScript" -status $csvOp -finding "GPO script policy reprocess is not configured." -risk $csvR3
     }
     else {
         if ($temp.NoGPOListChanges -eq 0) {
@@ -1979,18 +1989,18 @@ function checkPowerShellAudit {
             }
             if(!$booltest){
                 writeToFile -file $outputFile -path $folderLocation -str  " > PowerShell - Module Logging is enabled on all modules but only on the user."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Modules" -checkID "machine_PSModuleLog" -status $csvSt -finding "Powershell Module Logging is enabled on all modules (Only on current user)." -risk $csvR4
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Modules" -checkID "machine_PSModuleLog" -status $csvSt -finding "Powershell Module Logging is enabled on all modules (Only on current user)." -risk $csvR4
 
             }
             else{
                 writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is enabled only on the user and not on all modules."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Modules" -checkID "machine_PSModuleLog" -status $csvOp -finding "Powershell Module Logging is not enabled on all modules (Configuration is only on user) - (please check the script output for more information)." -risk $csvR4
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Modules" -checkID "machine_PSModuleLog" -status $csvOp -finding "Powershell Module Logging is not enabled on all modules (Configuration is only on user) - (please check the script output for more information)." -risk $csvR4
                 writeToFile -file $outputFile -path $folderLocation -str ($temp2 | Select-Object -ExpandProperty Property | Out-String) # getting which Module are logged in User-Space  
             } 
         }
         else {
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module Logging is not enabled."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Modules" -checkID "machine_PSModuleLog" -status $csvOp -finding "PowerShell Module logging is not enabled!."  -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Modules" -checkID "machine_PSModuleLog" -status $csvOp -finding "PowerShell Module logging is not enabled."  -risk $csvR4
 
         }
     }
@@ -2004,17 +2014,17 @@ function checkPowerShellAudit {
         }
         if(!$booltest){
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module Logging is not enabled on all modules:" 
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Modules" -checkID "machine_PSModuleLog" -status $csvOp -finding "Powershell Module Logging is not enabled on all modules (please check the script output for more information)." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Modules" -checkID "machine_PSModuleLog" -status $csvOp -finding "Powershell Module Logging is not enabled on all modules (please check the script output for more information)." -risk $csvR4
             writeToFile -file $outputFile -path $folderLocation -str ($temp2 | Select-Object -ExpandProperty Property | Out-String) # getting which Module are logged in User-Space  
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module Logging is enabled on all modules."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Modules" -checkID "machine_PSModuleLog" -status $csvSt -finding "Powershell Module Logging is enabled on all modules." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Modules" -checkID "machine_PSModuleLog" -status $csvSt -finding "Powershell Module Logging is enabled on all modules." -risk $csvR4
         }
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Module logging is not enabled!"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Modules" -checkID "machine_PSModuleLog" -status $csvOp -finding "PowerShell Module logging is not enabled!." -risk $csvR4
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Modules" -checkID "machine_PSModuleLog" -status $csvOp -finding "PowerShell Module logging is not enabled." -risk $csvR4
     }
 
     # --- End Of Module Logging ---
@@ -2028,28 +2038,28 @@ function checkPowerShellAudit {
             $temp2 = getRegValue -HKLM $false -regPath "\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -regName "EnableScriptBlockInvocationLogging"
             if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
                 writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is enabled but Invocation logging is not enabled - only on user." 
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Script Block" -checkID "machine_PSScriptBlock" -status $csvSt -finding "Script Block Logging is enabled but Invocation logging is not enabled (Only on user)." -risk $csvR4
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Script Block" -checkID "machine_PSScriptBlock" -status $csvSt -finding "Script Block Logging is enabled but Invocation logging is not enabled (Only on user)." -risk $csvR4
             }
             else{
                 writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is enabled - only on user."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Script Block" -checkID "machine_PSScriptBlock" -status $csvSt -finding "PowerShell Script Block Logging is enabled (Only on current user)." -risk $csvR4
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Script Block" -checkID "machine_PSScriptBlock" -status $csvSt -finding "PowerShell Script Block Logging is enabled (Only on current user)." -risk $csvR4
 
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is not enabled!"
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Script Block" -checkID "machine_PSScriptBlock" -status $csvOp -finding "PowerShell Script Block Logging is disabled." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Script Block" -checkID "machine_PSScriptBlock" -status $csvOp -finding "PowerShell Script Block Logging is disabled." -risk $csvR4
         }
     }
     else{
         $temp2 = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -regName "EnableScriptBlockInvocationLogging"
         if($null -eq $temp2 -or $temp2.EnableScriptBlockInvocationLogging -ne 1){
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is enabled but Invocation logging is not."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Script Block" -checkID "machine_PSScriptBlock" -status $csvSt -finding "PowerShell Script Block Logging is enabled but Invocation logging is not." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Script Block" -checkID "machine_PSScriptBlock" -status $csvSt -finding "PowerShell Script Block logging is enabled but Invocation logging is not." -risk $csvR4
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Script Block Logging is enabled."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Script Block" -checkID "machine_PSScriptBlock" -status $csvSt -finding "PowerShell Script Block Logging is enabled." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Script Block" -checkID "machine_PSScriptBlock" -status $csvSt -finding "PowerShell Script Block Logging is enabled." -risk $csvR4
 
         }
     }
@@ -2064,24 +2074,24 @@ function checkPowerShellAudit {
             $temp2 = getRegValue -HKLM $false -regPath "\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -regName "EnableInvocationHeader"
             if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
                 writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but Invocation Header logging is not."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is enabled but Invocation Header logging is not enforced. (Only on current user)" -risk $csvR3
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is enabled but Invocation Header logging is not enforced. (Only on current user)" -risk $csvR3
                 $bollCheck = $True
             }
             $temp2 = getRegValue -HKLM $false -regPath "\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -regName "OutputDirectory"
             if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
                 writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but no folder is set to save the log."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is enabled but no folder is set to save the log. (Only on current user)" -risk $csvR3
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is enabled but no folder is set to save the log. (Only on current user)" -risk $csvR3
                 $bollCheck = $True
             }
             if(!$bollCheck){
                 writeToFile -file $outputFile -path $folderLocation -str " > Powershell - Transcription logging is enabled correctly but only on the user."
-                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Transcription" -checkID "machine_PSTranscript" -status $csvSt -finding "PowerShell Transcription logging is enabled and configured correctly. (Only on current user)" -risk $csvR3
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Transcription" -checkID "machine_PSTranscript" -status $csvSt -finding "PowerShell Transcription logging is enabled and configured correctly. (Only on current user)" -risk $csvR3
                 $bollCheck = $True
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is not enabled (logging input and output of PowerShell commands)."
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is not enabled." -risk $csvR3
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is not enabled." -risk $csvR3
             $bollCheck = $True
         }
     }
@@ -2089,19 +2099,19 @@ function checkPowerShellAudit {
         $temp2 = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -regName "EnableInvocationHeader"
         if($null -eq $temp2 -or $temp2.EnableInvocationHeader -ne 1){
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but Invocation Header logging is not enforced." 
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is enabled but Invocation Header logging is not enforced." -risk $csvR3
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is enabled but Invocation Header logging is not enforced." -risk $csvR3
             $bollCheck = $True
         }
         $temp2 = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -regName "OutputDirectory"
         if($null -eq $temp2 -or $temp2.OutputDirectory -eq ""){
             writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled but no folder is set to save the log." 
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is enabled but no folder is set to save the log." -risk $csvR3
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Transcription" -checkID "machine_PSTranscript" -status $csvOp -finding "PowerShell Transcription logging is enabled but no folder is set to save the log." -risk $csvR3
             $bollCheck = $True
         }
     }
     if(!$bollCheck){
         writeToFile -file $outputFile -path $folderLocation -str " > PowerShell - Transcription logging is enabled and configured correctly." 
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "Powershell Audit - Transcription" -checkID "machine_PSTranscript" -status $csvSt -finding "PowerShell Transcription logging is enabled and configured correctly." -risk $csvR3
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Audit" -checkName "PowerShell Logging - Transcription" -checkID "machine_PSTranscript" -status $csvSt -finding "PowerShell Transcription logging is enabled and configured correctly." -risk $csvR3
     }
     
 }
@@ -2330,11 +2340,23 @@ function checkProxyConfiguration {
     $reg = getRegValue -HKLM $true -regPath "Software\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -regName "ProxySettingsPerUser"
     if($null -ne $reg -and $reg.ProxySettingsPerUser -eq 0){
         writeToFile -file $outputFile -path $folderLocation -str " > Proxy is configured on the machine (enforced on all users forced by GPO)"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Proxy configuration location" -checkID "machine_proxyConf" -status $csvSt -finding "Proxy is configured on the machine (enforced on all users forced by GPO)."  -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Proxy configuration location" -checkID "machine_proxyConf" -status $csvSt -finding "Internet proxy is configured (enforced on all users forced by GPO)."  -risk $csvR2
     }
     else{
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Proxy configuration location" -checkID "machine_proxyConf" -status $csvOp -finding "Proxy is configured on the user." -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Proxy configuration location" -checkID "machine_proxyConf" -status $csvOp -finding "Internet Proxy is configured only on the user." -comment "Proxy is configured on the user space and not on the machine (e.g., an administrator might have Proxy but a standard user might not.)" -risk $csvR2
     }
+    #checking internet settings (IE and system use the same configuration)
+    $userProxy = getRegValue -HKLM $false -regPath "Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    $reg = getRegValue -HKLM $false -regPath "Software\Microsoft\Windows\CurrentVersion\Internet Settings" -regName "ProxyEnable"
+    if($null -ne $reg -and $reg.ProxyEnable -eq 1){
+        writeToFile -file $outputFile -path $folderLocation -str ($userProxy | Out-String)
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Proxy settings" -checkID "machine_proxySet" -status $csvUn -comment (($userProxy | Out-String)+".") -risk $csvR1
+    }
+    else {
+        writeToFile -file $outputFile -path $folderLocation -str " > User proxy is disabled"
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Proxy settings" -checkID "machine_proxySet" -status $csvSt -comment "User proxy is disabled. (e.g., no configuration found)" -risk $csvR1
+    }
+
     if (($winVersion.Major -ge 7) -or ($winVersion.Minor -ge 2)){
         $reg = getRegValue -HKLM $true -regPath "SOFTWARE\Policies\Microsoft\Windows\NetworkIsolation" -regName "DProxiesAuthoritive"
         if($null -ne $reg -and $reg.DProxiesAuthoritive -eq 1){
@@ -2351,25 +2373,25 @@ function checkProxyConfiguration {
     $reg2 = getRegValue -HKLM $false -regPath "Software\Policies\Microsoft\Internet Explorer\Control Panel" -regName "Proxy"
     if($null -ne $reg -and $reg.Proxy -eq 1){
         writeToFile -file $outputFile -path $folderLocation -str " > All users cannot change proxy setting - prevention is on the computer level (only in windows other application not always use the system setting)"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Access to configure proxy" -checkID "machine_accConfProxy" -status $csvSt -finding "All users cannot change proxy setting."  -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Permissions to configure proxy" -checkID "machine_accConfProxy" -status $csvSt -finding "All users are not allowed to change proxy settings."  -risk $csvR2
     }
     elseif($null -ne $reg2 -and $reg2.Proxy -eq 1){
         writeToFile -file $outputFile -path $folderLocation -str " > User cannot change proxy setting - prevention is on the user level (only in windows other application not always use the system setting)"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Access to configure proxy" -checkID "machine_accConfProxy" -status $csvUn -finding "User cannot change proxy setting - Other users might have the ability to change this setting."  -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Permissions to configure proxy" -checkID "machine_accConfProxy" -status $csvUn -finding "User cannot change proxy setting - Other users might have the ability to change this setting." -comment "Configuration is set on the user space." -risk $csvR2
     }
     else {
         writeToFile -file $outputFile -path $folderLocation -str " > User can change proxy setting (only in windows other application not always use the system setting)"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Access to configure proxy" -checkID "machine_accConfProxy" -status $csvOp -finding "User can change proxy setting."  -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Permissions to configure proxy" -checkID "machine_accConfProxy" -status $csvOp -finding "Low privileged users can modify proxy settings."  -risk $csvR2
     }
 
     $reg = getRegValue -HKLM $true -regPath "Software\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -regName "EnableAutoProxyResultCache"
     if($null -ne $reg -and $reg.EnableAutoProxyResultCache -eq 0){
         writeToFile -file $outputFile -path $folderLocation -str " > Caching of Auto-Proxy scripts is Disable (WPAD Disabled)" # need to check
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Caching of Auto-Proxy scripts(WPAD)" -checkID "machine_AutoProxyResultCache" -status $csvSt -finding "Caching of Auto-Proxy scripts is Disable (WPAD disabled)." -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Caching of Auto-Proxy scripts (WPAD)" -checkID "machine_AutoProxyResultCache" -status $csvSt -finding "Caching of Auto-Proxy scripts is Disable (WPAD disabled)." -risk $csvR3
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > Caching of Auto-Proxy scripts is enabled (WPAD enabled)" # need to check
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Caching of Auto-Proxy scripts(WPAD)" -checkID "machine_AutoProxyResultCache" -status $csvOp -finding "Caching of Auto-Proxy scripts is enabled (WPAD enabled)." -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Caching of Auto-Proxy scripts (WPAD)" -checkID "machine_AutoProxyResultCache" -status $csvOp -finding "Caching of Auto-Proxy scripts is enabled (WPAD enabled)." -risk $csvR3
     }
     writeToFile -file $outputFile -path $folderLocation -str "`r`n=== WinHTTP service (Auto Proxy) ==="
     $proxySrv = Get-Service -Name "WinHttpAutoProxySvc" -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
@@ -2398,18 +2420,7 @@ function checkProxyConfiguration {
     writeToFile -file $outputFile -path $folderLocation -str "`r`n=== netsh winhttp show proxy - output ==="
     writeToFile -file $outputFile -path $folderLocation -str (netsh winhttp show proxy)
     writeToFile -file $outputFile -path $folderLocation -str "`r`n=== User proxy setting ==="
-    #checking internet settings (IE and system use the same configuration)
-    $userProxy = getRegValue -HKLM $false -regPath "Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-    $reg = getRegValue -HKLM $false -regPath "Software\Microsoft\Windows\CurrentVersion\Internet Settings" -regName "ProxyEnable"
-    if($null -ne $reg -and $reg.ProxyEnable -eq 1){
-        writeToFile -file $outputFile -path $folderLocation -str ($userProxy | Out-String)
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Proxy settings" -checkID "machine_proxySet" -status $csvUn -finding (($userProxy | Out-String)+".") -risk $csvR1
-    }
-    else {
-        writeToFile -file $outputFile -path $folderLocation -str " > User proxy is disabled"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Proxy settings" -checkID "machine_proxySet" -status $csvSt -finding "User proxy is disabled." -risk $csvR1
-    }
-
+    
     <# Browser specific tests need to work on it
     #checking if chrome is installed
     $chromeComp = $null -ne (Get-ItemProperty HKLM:\Software\Google\Chrome)
@@ -2597,8 +2608,8 @@ function checkWinUpdateConfig{
         }
     }
     else{
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Patching" -checkName "WSUS update" -checkID "machine_wsusUpdate" -status $csvUn -finding "No WSUS configuration found. (Might be managed in anther way)" -risk $csvR1
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Patching" -checkName "WSUS update address" -checkID "machine_wsusUpdateAddress" -status $csvUn -finding "No WSUS configuration found. (Might be managed in anther way)"  -risk $csvR1
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Patching" -checkName "WSUS update" -checkID "machine_wsusUpdate" -status $csvUn -finding "No WSUS configuration found (might be managed in another way)." -risk $csvR1
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Patching" -checkName "WSUS update address" -checkID "machine_wsusUpdateAddress" -status $csvUn -finding "No WSUS configuration found (might be managed in another way)."  -risk $csvR1
         writeToFile -file $outputFile -path $folderLocation -str " > No WSUS configuration found."
     }
 }
@@ -2628,12 +2639,12 @@ function checkUnquotedSePath {
         }
     }
     if ($boolBadPath){
-        addToCSV -relatedFile $outputFile -category "Vulnerabilities" -checkName "Unquoted path" -checkID "vul_quotedPath" -status $csvOp -finding ("There are vulnerable services in this machine:"+($badPaths | Out-String)+".")  -risk $csvR5
+        addToCSV -relatedFile $outputFile -category "Machine Vulnerabilities" -checkName "Unquoted path" -checkID "vul_quotedPath" -status $csvOp -finding ("There are vulnerable services in this machine:"+($badPaths | Out-String)+".")  -risk $csvR5
         writeToFile -file $outputFile -path $folderLocation -str " > There are vulnerable services in this machine:"
         writeToFile -file $outputFile -path $folderLocation -str  ($badPaths | Out-String)
     }
     else{
-        addToCSV -relatedFile $outputFile -category "Vulnerabilities" -checkName "Unquoted path" -checkID "vul_quotedPath" -status $csvSt -finding "No Service found that is vulnerable with Unquoted path." -risk $csvR5
+        addToCSV -relatedFile $outputFile -category "Machine Vulnerabilities" -checkName "Unquoted path" -checkID "vul_quotedPath" -status $csvSt -finding "No services that are vulnerable to unquoted path privilege escalation vector were found." -risk $csvR5
         writeToFile -file $outputFile -path $folderLocation -str " > The check did not find any service that is vulnerable to unquoted path escalation attack. This is good."
     }
 }
@@ -2654,29 +2665,29 @@ function checkSimulEhtrAndWifi {
             switch ($reg.fMinimizeConnections) {
                 0 {
                      writeToFile -file $outputFile -path $folderLocation -str " > Machine is not hardened and allow simultaneous connections" 
-                     addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -status $csvOp -finding "Machine allows simultaneous Ethernet connections." -risk $csvR2
+                     addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet simultaneous connections" -checkID "machine_ethSim" -status $csvOp -finding "Machine allows simultaneous Ethernet connections." -risk $csvR2
                     }
                 1 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Any new automatic internet connection is blocked when the computer has at least one active internet connection to a preferred type of network." 
-                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -status $csvSt -finding "Machine block's any new automatic internet connection when the computer has at least one active internet connection to a preferred type of network." -risk $csvR2
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet simultaneous connections" -checkID "machine_ethSim" -status $csvSt -finding "Machine block's any new automatic internet connection when the computer has at least one active internet connection to a preferred type of network." -risk $csvR2
                 }
                 2 {
                      writeToFile -file $outputFile -path $folderLocation -str " > Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured to stay connected to cellular." 
-                     addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -status $csvSt -finding "Machine is configured to minimize the number of simultaneous connections to the Internet or a Windows Domain is configured to stay connected to cellular." -risk $csvR2
+                     addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet simultaneous connections" -checkID "machine_ethSim" -status $csvSt -finding "Machine is configured to minimize the number of simultaneous connections to the Internet or a Windows Domain is configured to stay connected to cellular." -risk $csvR2
                     }
                 3 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Machine is hardened and disallow Wi-Fi when connected to Ethernet."
-                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -status $csvSt -finding "Machine is configured to disallow Wi-Fi when connected to Ethernet." -risk $csvR2
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet simultaneous connections" -checkID "machine_ethSim" -status $csvSt -finding "Machine is configured to disallow Wi-Fi when connected to Ethernet." -risk $csvR2
                 }
                 Default {
                     writeToFile -file $outputFile -path $folderLocation -str " > Minimize the number of simultaneous connections to the Internet or a Windows Domain is configured with unknown configuration"
-                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -status $csvUn -finding "Machine is configured with unknown configuration." -risk $csvR2
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet simultaneous connections" -checkID "machine_ethSim" -status $csvUn -finding "Machine is configured with unknown configuration." -risk $csvR2
                 }
             }
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Minimize the number of simultaneous connections to the Internet or a Windows Domain is not configured"
-            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -status $csvUn -finding "Machine is missing configuration for simultaneous Ethernet connections (e.g., for servers it is fine to not configure this setting)." -risk $csvR2
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet simultaneous connections" -checkID "machine_ethSim" -status $csvUn -finding "Machine is missing configuration for simultaneous Ethernet connections (e.g., for servers it is fine to not configure this setting)." -risk $csvR2
         }
 
         writeToFile -file $outputFile -path $folderLocation -str "`r`n=== checking if GPO Prohibit connection to non-domain networks when connected to domain authenticated network is configured"
@@ -2700,7 +2711,7 @@ function checkSimulEhtrAndWifi {
     }
     else{
         writeToFile -file $outputFile -path $folderLocation -str " > OS is obsolete and those not support network access restriction based on GPO"
-        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet Simultaneous connections " -checkID "machine_ethSim" -status $csvUn -finding "OS is obsolete and those not support network access restriction based on GPO" -risk $csvR2
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Ethernet simultaneous connections" -checkID "machine_ethSim" -status $csvUn -finding "OS is obsolete and those not support network access restriction based on GPO" -risk $csvR2
         addToCSV -relatedFile $outputFile -category "Machine Hardening - Networking" -checkName "Prohibit connection to non-domain networks" -checkID "machine_PCTNDNetwork" -status $csvUn -finding "OS is obsolete and those not support network access restriction based on GPO." -risk $csvR2
     }
     
@@ -2851,48 +2862,48 @@ function checkKerberos{
             switch ($reg.supportedencryptiontypes) {
                 8 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows AES128 only - this is a good thing" 
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES128 only." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES128 only." -risk $csvR2
                 }
                 16 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows AES256 only - this is a good thing"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES256 only." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES256 only." -risk $csvR2
                 }
                 24 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows AES128 + AES256 only - this is a good thing"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES128 + AES256 only." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES128 + AES256 only." -risk $csvR2
                 }
                 2147483624 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows AES128 + Future encryption types  only - this is a good thing"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES128 + Future encryption types." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES128 + Future encryption types." -risk $csvR2
                  }
                 2147483632 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows AES256 + Future encryption types  only - this is a good thing"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES256 + Future encryption types." -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES256 + Future encryption types." -risk $csvR2
                  }
                 2147483640 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows AES128 + AES256 + Future encryption types only - this is a good thing"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES128 + AES256 + Future encryption types."  -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvSt -finding "Kerberos encryption allows AES128 + AES256 + Future encryption types."  -risk $csvR2
                  }
                 2147483616 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows Future encryption types only - things will not work properly inside the domain (probably)"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows Future encryption types only (e.g., dose not allow any encryption."  -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows Future encryption types only (e.g., dose not allow any encryption."  -risk $csvR2
                 }
 
                 0 { 
                     writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows Default authentication (RC4 and up) - this is a finding"
-                    addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows Default authentication (RC4 and up)."  -risk $csvR4
+                    addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows Default authentication (RC4 and up)."  -risk $csvR2
                  }
                 Default {
                     if($reg.supportedencryptiontypes -ge 2147483616){
                         $temp = $reg.supportedencryptiontypes - 2147483616
                         writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows low encryption the Decimal Value is: $temp and it is including also Future encryption types (subtracted from the number) - this is a finding"
-                        addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows low encryption the Decimal Value is: $temp and it is including also Future encryption types (subtracted from the number)."  -risk $csvR4
+                        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows low encryption the Decimal Value is: $temp and it is including also Future encryption types (subtracted from the number)."  -risk $csvR2
 
                     }
                     else
                     {
                         writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows low encryption the Decimal Value is:"+ $reg.supportedencryptiontypes +" - this is a finding"
-                        addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows low encryption the Decimal Value is: $temp."  -risk $csvR4
+                        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows low encryption the Decimal Value is: $temp."  -risk $csvR2
                     }
                     writeToFile -file $outputFile -path $folderLocation -str " > For more information: https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/decrypting-the-selection-of-supported-kerberos-encryption-types/ba-p/1628797"
                 }
@@ -2900,7 +2911,7 @@ function checkKerberos{
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Kerberos encryption allows Default authentication (RC4 and up) - this is a finding"
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows Default authentication (RC4 and up)." -risk $csvR4
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -status $csvOp -finding "Kerberos encryption allows Default authentication (RC4 and up)." -risk $csvR2
         }
         <# Additional check might be added in the future 
         $kerbPath =  "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\Kerberos\Parameters"
@@ -2944,7 +2955,7 @@ function checkKerberos{
     }
     else{
         writeToLog -str "Kerberos security check skipped machine is not part of a domain"
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -finding "Machine is not part of a domain."  -risk $csvR4
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Kerberos supported encryption" -checkID "domain_kerbSupEnc" -finding "Machine is not part of a domain."  -risk $csvR2
     }
 }
 
@@ -2963,19 +2974,335 @@ function checkPrevStorOfPassAndCred {
     $reg = getRegValue -HKLM $true -regPath "\System\CurrentControlSet\Control\Lsa\" -regName "DisableDomainCreds"
     if($null -eq $reg){
         writeToFile -file $outputFile -path $folderLocation -str " > Do not allow storage of passwords and credentials for network authentication hardening is not configured"
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvOp -finding "Storage of network passwords and credentials is not configured." -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvOp -finding "Storage of network passwords and credentials is not configured." -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
 
     }
     else{
         if($reg.DisableDomainCreds -eq 1){
             writeToFile -file $outputFile -path $folderLocation -str " > Do not allow storage of passwords and credentials for network authentication hardening is enabled - this is a good thing."
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvSt -finding "Storage of network passwords and credentials is disabled. (hardened)" -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvSt -finding "Storage of network passwords and credentials is disabled. (hardened)" -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
         }
         else{
             writeToFile -file $outputFile -path $folderLocation -str " > Do not allow storage of passwords and credentials for network authentication hardening is disabled - This is a finding."
-            addToCSV -relatedFile $outputFile -category "Domain Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvOp -finding "Storage of network passwords and credentials is enabled. (Configuration is disabled)" -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "Storage of passwords and credentials" -checkID "domain_PrevStorOfPassAndCred" -status $csvOp -finding "Storage of network passwords and credentials is enabled. (Configuration is disabled)" -risk $csvR3 -comment "https://www.stigviewer.com/stig/windows_8/2014-01-07/finding/V-3376"
         }
     }
+}
+
+#CredSSP Checks (in development)
+# https://thegeekpage.com/credssp-encryption-oracle-remediation-error/
+# https://admx.help/?Category=Windows_10_2016&Policy=Microsoft.Policies.CredentialsSSP::AllowDefaultCredentials
+# Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
+function checkCredSSP {
+    param (
+        $name
+    )
+    $outputFile = getNameForFile -name $name -extension ".txt"
+    writeToLog -str "running checkCredSSP function"
+    writeToScreen -str "Checking CredSSP Configuration..." -ForegroundColor Yellow
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n============= CredSSP Configuration ============="
+    writeToFile -file $outputFile -path $folderLocation -str "The Credential Security Support Provider protocol (CredSSP) is a Security Support Provider that is implemented by using the Security Support Provider Interface (SSPI)."
+    writeToFile -file $outputFile -path $folderLocation -str "CredSSP lets an application delegate the user's credentials from the client to the target server for remote authentication."
+    writeToFile -file $outputFile -path $folderLocation -str "CredSSP provides an encrypted Transport Layer Security Protocol channel."
+    writeToFile -file $outputFile -path $folderLocation -str "The client is authenticated over the encrypted channel by using the Simple and Protected Negotiate (SPNEGO) protocol with either Microsoft Kerberos or Microsoft NTLM."
+    writeToFile -file $outputFile -path $folderLocation -str "For more information about CredSSP: https://docs.microsoft.com/en-us/windows/win32/secauthn/credential-security-support-provider"
+    writeToFile -file $outputFile -path $folderLocation -str "Risk related to CredSSP:"
+    writeToFile -file $outputFile -path $folderLocation -str "1. An attacker runs as admin on the client machine and delegating default credentials is enabled: Grab cleartext password from lsass."
+    writeToFile -file $outputFile -path $folderLocation -str "2. An attacker runs as admin on the client machine and delegating default credentials is enabled: wait for new users to login, grab their password."
+    writeToFile -file $outputFile -path $folderLocation -str "3. An attacker runs in the user context(none admin) and delegating default credentials enabled: running Kekeo server and Kekeo client to get passwords form the machine."
+    writeToFile -file $outputFile -path $folderLocation -str "Other attacks exist that will utilize CredSSP for lateral movement and privilege escalation, such as using downgraded NTLM and saved credentials to catch hashes without raising alerts."
+
+    #Allow delegating default credentials
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n------------- Allow delegation of default credentials -------------"
+    writeToFile -file $outputFile -path $folderLocation -str "This policy setting applies when server authentication was achieved by using a trusted X509 certificate or Kerberos.`r`nIf you enable this policy setting, you can specify the servers to which the user's default credentials can be delegated (default credentials are those that you use when first logging on to Windows)."
+    $reg = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\CredentialsDelegation" -regName "AllowDefaultCredentials"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > Not allowing delegation of default credentials - No configuration found default setting is set to false."
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of default credentials" -checkID "domain_CredSSPDefaultCred" -status $csvSt -finding "CredSSP - Do not allow delegation of default credentials - default setting set to false." -comment "Delegation of default credentials is not permitted to any computer. Applications depending upon this delegation behavior might fail authentication." -risk $csvR3
+    }
+    else{
+        if($reg.AllowDefaultCredentials -eq 1){
+            $temp2 = Get-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentials" -ErrorAction SilentlyContinue
+            $booltest = $false
+            $serverList =""
+            foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
+                if($item -eq "*"){
+                    $booltest = $True
+                }
+                if($serverList -eq ""){
+                    $serverList = $item
+                }
+                else{
+                    $serverList += ", $item"
+                }
+            }
+            if($booltest){
+                writeToFile -file $outputFile -path $folderLocation -str " > Allows delegation of default credentials for any server."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of default credentials" -checkID "domain_CredSSPDefaultCred" -status $csvOp -finding "CredSSP - Allows delegation of default credentials for any server. Server list:$serverList" -risk $csvR3
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Allows delegation of default credentials for servers."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of default credentials" -checkID "domain_CredSSPDefaultCred" -status $csvOp -finding "CredSSP - Allows delegation of default credentials. Server list:$serverList" -risk $csvR3
+            }
+            writeToFile -file $outputFile -path $folderLocation -str " > Server list: $serverList"           
+        }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Do not allows delegation of default credentials."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of default credentials" -checkID "domain_CredSSPDefaultCred" -status $csvSt -finding "CredSSP - Do not allow delegation of default credentials." -risk $csvR3
+        }
+    }
+
+    #Allow delegating default credentials with NTLM-only server authentication
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n------------- Allow delegation of default credentials with NTLM-only server authentication -------------"
+    writeToFile -file $outputFile -path $folderLocation -str "This policy setting applies to applications using the Cred SSP component (for example: Remote Desktop Connection).`r`nThis policy setting applies when server authentication was achieved via NTLM. "
+    $reg = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\CredentialsDelegation" -regName "AllowDefCredentialsWhenNTLMOnly"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > Not allowing delegation of default credentials with NTLM-only - No configuration found default setting is set to false."
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of default credentials with NTLM-Only" -checkID "domain_CredSSPSavedCred" -status $csvSt -finding "CredSSP - Not allowing delegation of default credentials with NTLM-only - default setting set to false." -comment "delegation of default credentials is not permitted to any machine." -risk $csvR3
+    }
+    else{
+        if($reg.AllowDefCredentialsWhenNTLMOnly -eq 1){
+            $temp2 = Get-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\CredentialsDelegation\AllowDefCredentialsWhenNTLMOnly" -ErrorAction SilentlyContinue
+            $booltest = $false
+            $serverList =""
+            foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
+                if($item -eq "*"){
+                    $booltest = $True
+                }
+                if($serverList -eq ""){
+                    $serverList = $item
+                }
+                else{
+                    $serverList += ", $item"
+                }
+            }
+            if($booltest){
+                writeToFile -file $outputFile -path $folderLocation -str " > Allows delegation of default credentials in NTLM for any server."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of default credentials with NTLM-Only" -checkID "domain_CredSSPSavedCred" -status $csvOp -finding "CredSSP - Allows delegation of default credentials in NTLM for any server. Server list:$serverList" -risk $csvR3
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Allows delegation of default credentials in NTLM for servers."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of default credentials with NTLM-Only" -checkID "domain_CredSSPSavedCred" -status $csvOp -finding "CredSSP - Allows delegation of default credentials in NTLM for servers. Server list:$serverList" -risk $csvR3
+            }
+            writeToFile -file $outputFile -path $folderLocation -str " > Server list: $serverList"
+            }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Not allowing delegation of default credentials with NTLM-only."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of default credentials with NTLM-Only" -checkID "domain_CredSSPSavedCred" -status $csvSt -finding "CredSSP - Not allowing delegation of default credentials with NTLM-only." -risk $csvR3
+        
+        }
+    }
+
+    #Allow delegating saved credentials
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n------------- Allow delegation of saved credentials -------------"
+    writeToFile -file $outputFile -path $folderLocation -str "This policy setting applies when server authentication was achieved by using a trusted X509 certificate or Kerberos.`r`nIf you enable this policy setting, you can specify the servers to which the user's saved credentials can be delegated (saved credentials are those that you elect to save/remember using the Windows credential manager)."
+    $reg = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\CredentialsDelegation" -regName "AllowSavedCredentials"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > Allowing delegation of saved credentials - No configuration found default setting is set to true. - After proper mutual authentication, delegation of saved credentials is permitted to Remote Desktop Session Host running on any machine."
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of saved credentials" -checkID "domain_CredSSPSavedCred" -status $csvOp -finding "CredSSP - Allowing delegation of saved credentials. - default setting set to true." -comment "After proper mutual authentication, delegation of saved credentials is permitted to Remote Desktop Session Host running on any machine." -risk $csvR3
+    }
+    else{
+        if($reg.AllowSavedCredentials -eq 1){
+            $temp2 = Get-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentials" -ErrorAction SilentlyContinue
+            $booltest = $false
+            $serverList =""
+            foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
+                if($item -eq "*"){
+                    $booltest = $True
+                }
+                if($serverList -eq ""){
+                    $serverList = $item
+                }
+                else{
+                    $serverList += ", $item"
+                }
+            }
+            if($booltest){
+                writeToFile -file $outputFile -path $folderLocation -str " > Allows delegation of saved credentials for any server."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of saved credentials" -checkID "domain_CredSSPSavedCred" -status $csvOp -finding "CredSSP - Allows delegation of saved credentials for any server. Server list:$serverList" -risk $csvR3
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Allows delegation of saved credentials for servers."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of saved credentials" -checkID "domain_CredSSPSavedCred" -status $csvOp -finding "CredSSP - Allows delegation of saved credentials for servers. Server list:$serverList" -risk $csvR3
+            }
+            writeToFile -file $outputFile -path $folderLocation -str " > Server list: $serverList"
+            }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Not allowing delegation of saved credentials."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of saved credentials" -checkID "domain_CredSSPSavedCred" -status $csvSt -finding "CredSSP - Not allowing delegation of saved credentials." -risk $csvR3
+        
+        }
+        }
+
+    #Allow delegating saved credentials with NTLM-only server authentication
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n-------------Allow delegation of default credentials with NTLM-only server authentication -------------"
+    writeToFile -file $outputFile -path $folderLocation -str "This policy setting applies to applications using the Cred SSP component (for example: Remote Desktop Connection).`r`nIf you enable this policy setting, you can specify the servers to which the user's saved credentials can be delegated (saved credentials are those that you elect to save/remember using the Windows credential manager)."
+    $reg = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\CredentialsDelegation" -regName "AllowSavedCredentialsWhenNTLMOnly"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > Allowing delegation of saved credentials with NTLM-only - No configuration found default setting is set to true."
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of saved credentials with NTLM-Only" -checkID "domain_CredSSPSavedCredNTLM" -status $csvOp -finding "CredSSP - Allowing delegation of saved credentials with NTLM-only - No configuration found default setting is set to true." -risk $csvR3
+
+    }
+    else{
+        if($reg.AllowDefCredentialsWhenNTLMOnly -eq 1){
+            $temp2 = Get-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentialsWhenNTLMOnly" -ErrorAction SilentlyContinue
+            $booltest = $false
+            $serverList =""
+            foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
+                if($item -eq "*"){
+                    $booltest = $True
+                }
+                if($serverList -eq ""){
+                    $serverList = $item
+                }
+                else{
+                    $serverList += ", $item"
+                }
+            }
+            if($booltest){
+                writeToFile -file $outputFile -path $folderLocation -str " > Allows delegation of saved credentials in NTLM for any server."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of saved credentials with NTLM-Only" -checkID "domain_CredSSPSavedCredNTLM" -status $csvOp -finding "CredSSP - Allows delegation of saved credentials in NTLM for any server. Server list:$serverList" -risk $csvR3
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Allows delegation of saved credentials in NTLM for servers."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of saved credentials with NTLM-Only" -checkID "domain_CredSSPSavedCredNTLM" -status $csvOp -finding "CredSSP - Allows delegation of saved credentials in NTLM for servers. Server list:$serverList" -risk $csvR3
+            }
+            writeToFile -file $outputFile -path $folderLocation -str " > Server list: $serverList"
+            }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Not allowing delegation of saved credentials with NTLM-only."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allow delegation of saved credentials with NTLM-Only" -checkID "domain_CredSSPSavedCredNTLM" -status $csvSt -finding "CredSSP - Not allowing delegation of saved credentials with NTLM-only." -risk $csvR3
+        
+        }
+    }
+
+    #Deny delegating default credentials
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n------------- Deny delegating default credentials -------------"
+    writeToFile -file $outputFile -path $folderLocation -str "This policy setting applies to applications using the Cred SSP component (for example: Remote Desktop Connection).`r`nIf you enable this policy setting, you can specify the servers to which the user's default credentials cannot be delegated (default credentials are those that you use when first logging on to Windows)."
+    $reg = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\CredentialsDelegation" -regName "DenyDefaultCredentials"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > No explicit deny of delegation for default credentials. - No configuration found default setting is set to false."
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Deny delegation of default credentials" -checkID "domain_CredSSPDefaultCredDeny" -status $csvOp -finding "CredSSP - Allowing delegation of default credentials - No configuration found default setting is set to false (No explicit deny)." -risk $csvR1
+
+    }
+    else{
+        if($reg.DenyDefaultCredentials -eq 1){
+            $temp2 = Get-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\CredentialsDelegation\DenyDefaultCredentials" -ErrorAction SilentlyContinue
+            $booltest = $false
+            $serverList =""
+            foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
+                if($item -eq "*"){
+                    $booltest = $True
+                }
+                if($serverList -eq ""){
+                    $serverList = $item
+                }
+                else{
+                    $serverList += ", $item"
+                }
+            }
+            if($booltest){
+                writeToFile -file $outputFile -path $folderLocation -str " > Denying delegation of default credentials for any server."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Deny delegation of default credentials" -checkID "domain_CredSSPDefaultCredDeny" -status $csvSt -finding "CredSSP - Do not allow delegation of default credentials for any server. Server list:$serverList" -risk $csvR1
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Denying delegation of default credentials."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Deny delegation of default credentials" -checkID "domain_CredSSPDefaultCredDeny" -status $csvSt -finding "CredSSP - Do not allow delegation of default credentials. Server list:$serverList" -risk $csvR1
+            }
+            writeToFile -file $outputFile -path $folderLocation -str " > Server list: $serverList"
+            }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > No explicit deny of delegation for default credentials."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Deny delegation of default credentials" -checkID "domain_CredSSPDefaultCredDeny" -status $csvOp -finding "CredSSP - Allowing delegation of default credentials." -risk $csvR1
+        
+        }
+    }
+    #Deny delegating saved credentials
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n------------- Deny delegating saved credentials -------------"
+    writeToFile -file $outputFile -path $folderLocation -str "This policy setting applies to applications using the Cred SSP component (for example: Remote Desktop Connection).`r`nIf you enable this policy setting, you can specify the servers to which the user's saved credentials cannot be delegated (saved credentials are those that you elect to save/remember using the Windows credential manager)."
+    $reg = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\CredentialsDelegation" -regName "DenySavedCredentials"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > Deny delegation of saved credentials - No configuration found default setting is set to false."
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Deny delegation of saved credentials" -checkID "domain_CredSSPSavedCredDeny" -status $csvOp -finding "CredSSP - No Specific deny list for delegations of saved credentials exist." -comment "No configuration found default setting is set to false (No explicit deny)." -risk $csvR1
+
+    }
+    else{
+        if($reg.DenySavedCredentials -eq 1){
+            $temp2 = Get-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\CredentialsDelegation\DenySavedCredentials" -ErrorAction SilentlyContinue
+            $booltest = $false
+            $serverList =""
+            foreach ($item in ($temp2 | Select-Object -ExpandProperty Property)){
+                if($item -eq "*"){
+                    $booltest = $True
+                }
+                if($serverList -eq ""){
+                    $serverList = $item
+                }
+                else{
+                    $serverList += ", $item"
+                }
+            }
+            if($booltest){
+                writeToFile -file $outputFile -path $folderLocation -str " > Denying delegation of saved credentials for any server."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Deny delegation of saved credentials" -checkID "domain_CredSSPSavedCredDeny" -status $csvSt -finding "CredSSP - Do not allow delegation of saved credentials for any server. Server list:$serverList" -risk $csvR1
+            }
+            else{
+                writeToFile -file $outputFile -path $folderLocation -str " > Denying delegation of saved credentials."
+                addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Deny delegation of saved credentials" -checkID "domain_CredSSPSavedCredDeny" -status $csvSt -finding "CredSSP - Do not allow delegation of saved credentials. Server list:$serverList" -risk $csvR1
+            }
+            writeToFile -file $outputFile -path $folderLocation -str " > Server list: $serverList"
+            }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > No explicit deny of delegations for saved credentials."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Deny delegation of saved credentials" -checkID "domain_CredSSPSavedCredDeny" -status $csvOp -finding "CredSSP - No Specific deny list for delegations of saved credentials exist (Setting is disabled)" -risk $csvR1
+        
+        }
+    }
+    #Remote host allows delegation of non-exportable credentials
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n------------- Remote host allows delegation of non-exportable credentials -------------"
+    writeToFile -file $outputFile -path $folderLocation -str "Remote host allows delegation of non-exportable credentials.`r`nWhen using credential delegation, devices provide an exportable version of credentials to the remote host. This exposes users to the risk of credential theft from attackers on the remote host.`r`nIf the Policy is enabled, the host supports Restricted Admin or Remote Credential Guard mode. "
+    $reg = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\CredentialsDelegation" -regName "AllowProtectedCreds"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > Remote host allows delegation of non-exportable credentials - No configuration found default setting is set to false."
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allows delegation of non-exportable credentials" -checkID "domain_CredSSPNonExportableCred" -status $csvOp -finding "CredSSP - Restricted Administration and Remote Credential Guard mode are not supported. (Default Setting)" -comment "User will always need to pass their credentials to the host." -risk $csvR2
+
+    }
+    else{
+        if($reg.AllowProtectedCreds -eq 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > The host supports Restricted Admin or Remote Credential Guard mode."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allows delegation of non-exportable credentials" -checkID "domain_CredSSPNonExportableCred" -status $csvSt -finding "CredSSP - The host supports Restricted Admin or Remote Credential Guard mode" -risk $csvR2
+            }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Restricted Administration and Remote Credential Guard mode are not supported. - User will always need to pass their credentials to the host."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Allows delegation of non-exportable credentials" -checkID "domain_CredSSPNonExportableCred" -status $csvOp -finding "CredSSP - Restricted Administration and Remote Credential Guard mode are not supported." -comment "User will always need to pass their credentials to the host." -risk $csvR2
+        
+        }
+    }
+    #Restrict delegation of credentials to remote servers https://admx.help/?Category=Windows_10_2016&Policy=Microsoft.Policies.CredentialsSSP::RestrictedRemoteAdministration
+    writeToFile -file $outputFile -path $folderLocation -str "`r`n------------- Restrict delegation of credentials to remote servers -------------"
+    writeToFile -file $outputFile -path $folderLocation -str "When running in Restricted Admin or Remote Credential Guard mode, participating apps do not expose signed in or supplied credentials to a remote host. Restricted Admin limits access to resources located on other servers or networks from the remote host because credentials are not delegated. Remote Credential Guard does not limit access to resources because it redirects all requests back to the client device. - Supported apps: RDP"
+    writeToFile -file $outputFile -path $folderLocation -sty "Restrict credential delegation: Participating applications must use Restricted Admin or Remote Credential Guard to connect to remote hosts."
+    writeToFile -file $outputFile -path $folderLocation -sty "Require Remote Credential Guard: Participating applications must use Remote Credential Guard to connect to remote hosts."
+    writeToFile -file $outputFile -path $folderLocation -sty "Require Restricted Admin: Participating applications must use Restricted Admin to connect to remote hosts."
+    writeToFile -file $outputFile -path $folderLocation -str "Note: To disable most credential delegation, it may be sufficient to deny delegation in Credential Security Support Provider (CredSSP) by modifying Administrative template settings (located at Computer Configuration\Administrative Templates\System\Credentials Delegation).`r`n Note: On Windows 8.1 and Windows Server 2012 R2, enabling this policy will enforce Restricted Administration mode, regardless of the mode chosen. These versions do not support Remote Credential Guard."
+    $reg = getRegValue -HKLM $true -regPath "\Software\Policies\Microsoft\Windows\CredentialsDelegation" -regName "RestrictedRemoteAdministration"
+    if($null -eq $reg){
+        writeToFile -file $outputFile -path $folderLocation -str " > Restricted Admin and Remote Credential Guard mode are not enforced and participating apps can delegate credentials to remote devices."
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Restrict delegation of credentials to remote servers" -checkID "domain_CredSSPResDelOfCredToRemoteSrv" -status $csvOp -finding "CredSSP - Restricted Admin and Remote Credential Guard mode are not enforced and participating apps can delegate credentials to remote devices. - Default Setting" -risk $csvR2
+
+    }
+    else{
+        if($reg.RestrictedRemoteAdministration -eq 1){
+            writeToFile -file $outputFile -path $folderLocation -str " > Restrict delegation of credentials to remote servers is enabled - Supporting Restrict credential delegation,Require Remote Credential Guard,Require Restricted Admin"
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Restrict delegation of credentials to remote servers" -checkID "domain_CredSSPResDelOfCredToRemoteSrv" -status $csvOp -finding "Restrict delegation of credentials to remote servers is enabled" -comment "Supporting Restrict credential delegation,Require Remote Credential Guard,Require Restricted Admin" -risk $csvR2
+            }
+        else{
+            writeToFile -file $outputFile -path $folderLocation -str " > Restricted Admin and Remote Credential Guard mode are not enforced and participating apps can delegate credentials to remote devices."
+            addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "CredSSP - Restrict delegation of credentials to remote servers" -checkID "domain_CredSSPResDelOfCredToRemoteSrv" -status $csvOp -finding "CredSSP - Restricted Admin and Remote Credential Guard mode are not enforced and participating apps can delegate credentials to remote devices." -risk $csvR2
+        
+        }
+    }
+
 }
 
 ### General values
@@ -2984,12 +3311,14 @@ $hostname = hostname
 #CSV Status Types
 $csvOp = "Opportunity" ; $csvSt = "Strength" ; $csvUn = "Unknown"
 #CSV Risk level
-$csvR1 = "Information" ; $csvR2 = "Low" ; $csvR3 = "Medium" ; $csvR4 = "High" ; $csvR5 = "Critical"
+$csvR1 = "Informational" ; $csvR2 = "Low" ; $csvR3 = "Medium" ; $csvR4 = "High" ; $csvR5 = "Critical"
+$isDomainController = $false
 $partOfDomain = (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
 if($partOfDomain){
     $domainName = ((Get-WmiObject -class Win32_ComputerSystem).Domain)
     # add is DC check 
-    $folderLocation = $hostname+"_"+$domainName
+    $folderRootLocation = $hostname+"_"+$domainName
+    $folderLocation = $folderRootLocation +"\Detailed information"
 }
 else{
     $temp = (Get-WMIObject win32_operatingsystem).name
@@ -2997,12 +3326,14 @@ else{
     $temp = $temp.Trim("Microsoft")
     $temp = $temp.Replace("Windows","Win")
     $temp = $temp.Substring(0,$temp.IndexOf("|"))
-    $folderLocation = $hostname+"_"+$temp
+    $folderRootLocation = $hostname+"_"+$temp
+    $folderLocation = $folderRootLocation +"\Detailed information"
 }
-if(Test-Path $folderLocation){
-    Remove-Item -Recurse -Path $folderLocation -Force -ErrorAction SilentlyContinue |Out-Null
+if(Test-Path $folderRootLocation){
+    Remove-Item -Recurse -Path $folderRootLocation -Force -ErrorAction SilentlyContinue |Out-Null
 }
 try{
+    New-Item -Path $folderRootLocation -ItemType Container -Force |Out-Null
     New-Item -Path $folderLocation -ItemType Container -Force |Out-Null
 }
 catch{
@@ -3017,7 +3348,7 @@ $winVersion = [System.Environment]::OSVersion.Version
 $psVer = Get-Host | Select-Object Version
 $psVer = $psVer.Version.Major
 if($psVer -ge 4){
-    Start-Transcript -Path ($folderLocation + "\" + $transcriptFile) -Append -ErrorAction SilentlyContinue
+    Start-Transcript -Path ($folderRootLocation + "\" + $transcriptFile) -Append -ErrorAction SilentlyContinue
 }
 else{
     writeToLog -str " Transcript creation is not passible running in powershell v2"
@@ -3032,40 +3363,34 @@ $runningAsAdmin = $null -ne (whoami /groups | select-string S-1-16-12288)
 if (!$runningAsAdmin)
     {writeToScreen -str "Please run the script as an elevated admin, or else some output will be missing! :-(" -ForegroundColor Red}
 
-# remove old folder and create new one
-Remove-Item $folderLocation -Recurse -ErrorAction SilentlyContinue
-New-Item $folderLocation -type directory -ErrorAction SilentlyContinue | Out-Null
-if (!(Test-Path -Path $folderLocation)){
-    writeToScreen -str "Script was unable to create the folder to hold the result - try to run in a different location where the user has permission to create folders" -ForegroundColor Red
-    exit -1
-}
 
 # output log
 writeToLog -str "Computer Name: $hostname"
-addToCSV -category "Information" -checkName "Computer Name" -checkID "info_cName" -status $null -finding $hostname -risk $csvR1
-addToCSV -category "Information" -checkName "Script Version" -checkID "info_sVer" -status $null -finding $Version -risk $csvR1
+addToCSV -category "Information" -checkName "Computer name" -checkID "info_cName" -status $null -finding $hostname -risk $csvR1
+addToCSV -category "Information" -checkName "Script version" -checkID "info_sVer" -status $null -finding $Version -risk $csvR1
 writeToLog -str ("Windows Version: " + (Get-WmiObject -class Win32_OperatingSystem).Caption)
-addToCSV -category "Information" -checkName "Windows Version" -checkID "info_wVer" -status $null -finding ((Get-WmiObject -class Win32_OperatingSystem).Caption) -risk $csvR1
+addToCSV -category "Information" -checkName "Windows version" -checkID "info_wVer" -status $null -finding ((Get-WmiObject -class Win32_OperatingSystem).Caption) -risk $csvR1
 switch ((Get-WmiObject -Class Win32_OperatingSystem).ProductType){
     1 {
-        $OSType = "Client"
+        $OSType = "Workstation"
         $isServer = $false
     }
     2 {
         $OSType = "Domain Controller"
         $isServer = $true
+        $isDomainController = $true
     }
     3 {
-        $OSType = "Server"
+        $OSType = "Member Server"
         $isServer = $true
     }
     default: {$OSType = "Unknown"}
 }
-addToCSV -category "Information" -checkName "OS Type" -checkID "info_OSType" -status $null -finding $OSType -risk $csvR1
+addToCSV -category "Information" -checkName "Computer type" -checkID "info_computerType" -status $null -finding $OSType -risk $csvR1
 writeToLog -str  "Part of Domain: $partOfDomain" 
 if ($partOfDomain)
 {
-    addToCSV -category "Information" -checkName "Domain Name" -checkID "info_dName" -status $null -finding $domainName -risk $csvR1
+    addToCSV -category "Information" -checkName "Domain name" -checkID "info_dName" -status $null -finding $domainName -risk $csvR1
     writeToLog -str  ("Domain Name: " + $domainName)
     if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
         {writeToLog -str  "Domain Controller: True" }
@@ -3073,7 +3398,7 @@ if ($partOfDomain)
         {writeToLog -str  "Domain Controller: False"}    
 }
 else{
-    addToCSV -category "Information" -checkName "Domain Name" -checkID "info_dName" -status $null -finding "WorkGroup" -risk $csvR1
+    addToCSV -category "Information" -checkName "Domain name" -checkID "info_dName" -status $null -finding "WorkGroup" -risk $csvR1
 }
 $user = whoami
 writeToLog -str "Running User: $user"
@@ -3115,7 +3440,7 @@ dataWinFeatures -name "Windows-Features"
 dataInstalledHotfixes -name "Hotfixes"
 
 # check Windows update configuration
-checkWinUpdateConfig -name "Domain-Hardening"
+checkWinUpdateConfig -name "Windows-updates"
 
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
 dataRunningProcess -name "Process-list"
@@ -3136,7 +3461,7 @@ dataAccountPolicy -name "AccountPolicy"
 dataLocalUsers -name "Local-Users"
 
 # NTLMv2 enforcement check
-checkNTLMv2 -name "Domain-Hardening"
+checkNTLMv2 -name "Domain-authentication"
 
 # check SMB protocol hardening
 checkSMBHardening -name "SMB"
@@ -3172,7 +3497,7 @@ checkSAMEnum -name "SAM-Enumeration"
 checkPowershellVer -name "PowerShell-Versions"
 
 # GPO reprocess check
-checkGPOReprocess -name "Domain-Hardening"
+checkGPOReprocess -name "GPO-reprocess"
 
 # Command line Audit settings check
 checkCommandLineAudit -name "Audit-Policy"
@@ -3187,13 +3512,13 @@ checkLogSize -name "Audit-Policy"
 dataAuditPolicy -name "Audit-Policy"
 
 # Check always install elevated setting
-checkInstallElevated -name "Domain-Hardening"
+checkInstallElevated -name "Machine-Hardening"
 
 # Check if safe mode access by non-admins is blocked
-checkSafeModeAcc4NonAdmin -name "Domain-Hardening"
+checkSafeModeAcc4NonAdmin -name "Machine-Hardening"
 
 # Check if there is hardening preventing user from connecting to multiple networks simultaneous 
-checkSimulEhtrAndWifi -name "Domain-Hardening"
+checkSimulEhtrAndWifi -name "Internet-Connectivity"
 
 # get shared folders (Share permissions are missing for older PowerShell versions)
 dataSharedFolders -name "Shares"
@@ -3205,10 +3530,13 @@ checkSensitiveInfo -name "Sensitive-Info"
 dataSystemInfo -name "Systeminfo"
 
 #Get Kerberos secuirty settings
-checkKerberos -name "Domain-Hardening"
+checkKerberos -name "Domain-authentication"
 
 # Check if credentials and password are stored in LSASS for network authentication.
-checkPrevStorOfPassAndCred  -name "Domain-Hardening"
+checkPrevStorOfPassAndCred  -name "Domain-authentication"
+
+# Check CredSSP configuration
+checkCredSSP -name "CredSSP"
 
 # Add Controls list to CSV file
 addControlsToCSV
@@ -3216,7 +3544,11 @@ addControlsToCSV
 
 #########################################################
 
-$script:checksArray | Select-Object "Category", "CheckName","Status","Risk","Finding","Comments","Related file","CheckID" | Export-Csv -Path ($folderLocation+"\"+(getNameForFile -name "Checks" -extension ".csv")) -NoTypeInformation -ErrorAction SilentlyContinue
+$script:checksArray | Select-Object "Category", "CheckName","Status","Risk","Finding","Comments","Related file","CheckID" | Export-Csv -Path ($folderRootLocation+"\"+(getNameForFile -name "Hardening_Checks_BETA" -extension ".csv")) -NoTypeInformation -ErrorAction SilentlyContinue
+if($psVer -ge 3){
+    $script:checksArray | Select-Object "Category", "CheckName","Status","Risk","Finding","Comments","Related file","CheckID" | ConvertTo-Json | Add-Content -Path ($folderRootLocation+"\"+(getNameForFile -name "Hardening_Checks_BETA" -extension ".json"))
+}
+
 
 $currTime = Get-Date
 writeToLog -str ("Script End Time (before zipping): " + $currTime.ToString("dd/MM/yyyy HH:mm:ss"))
@@ -3229,14 +3561,14 @@ if($psVer -ge 4){
 if($psVer -ge 5){
     $fullPath = Get-Location
     $fullPath = $fullPath.path
-    $fullPath += "\"+$folderLocation
+    $fullPath += "\"+$folderRootLocation
     $zipLocation = $fullPath+".zip"
     if(Test-Path $zipLocation){
         Remove-Item -Force -Path $zipLocation
     }
-    Compress-Archive -Path $folderLocation\* -DestinationPath $zipLocation -Force -ErrorAction SilentlyContinue
+    Compress-Archive -Path $folderRootLocation\* -DestinationPath $zipLocation -Force -ErrorAction SilentlyContinue
     if(Test-Path $zipLocation){
-        Remove-Item -Recurse -Force -Path $folderLocation -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force -Path $folderRootLocation -ErrorAction SilentlyContinue
         writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
     }
     else{
@@ -3249,7 +3581,7 @@ if($psVer -ge 5){
 elseif ($psVer -eq 4 ) {
         $fullPath = Get-Location
         $fullPath = $fullPath.path
-        $fullPath += "\"+$folderLocation
+        $fullPath += "\"+$folderRootLocation
         $zipLocation = $fullPath+".zip"
         if(Test-Path $zipLocation){
             Remove-Item -Force -Path $zipLocation
@@ -3257,7 +3589,7 @@ elseif ($psVer -eq 4 ) {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::CreateFromDirectory($fullPath,$zipLocation)
         if(Test-Path $zipLocation){
-            Remove-Item -Recurse -Force -Path $folderLocation -ErrorAction SilentlyContinue
+            Remove-Item -Recurse -Force -Path $folderRootLocation -ErrorAction SilentlyContinue
             writeToScreen -str "All Done! Please send the output ZIP file." -ForegroundColor Green
         }
         else{
@@ -3267,7 +3599,7 @@ elseif ($psVer -eq 4 ) {
 }
 else{
     writeToScreen -str "All Done! Please ZIP all the files and send it back." -ForegroundColor Green
-    writeToLog -str "powershell running the script is below 4 script is not supporting compression to zip below that"
+    writeToLog -str "powershell running the script is below version 4 script is not supporting compression to zip below that"
 }
 
 $endTime = Get-Date
