@@ -153,7 +153,6 @@ function addToCSV {
 
 function addControlsToCSV {
     addToCSV -category "Machine Hardening - Patching" -checkID  "control_OSupdate" -checkName "OS Update" -finding "Ensure OS is up to date" -risk $csvR4 -relatedFile "hotfixes" -comment "shows recent updates" -status $csvUn
-    addToCSV -category "Machine Hardening - Operation system" -checkID  "control_NetSession" -checkName "Net Session permissions" -finding "Ensure Net Session permissions are hardened" -risk $csvR3 -relatedFile "NetSession" -status $csvUn
     addToCSV -category "Machine Hardening - Audit" -checkID  "control_AuditPol" -checkName "Audit policy" -finding "Ensure audit policy is sufficient (need admin permission to run)" -risk $csvR3 -relatedFile "Audit-Policy" -status $csvUn
     addToCSV -category "Machine Hardening - Users" -checkID  "control_LocalUsers" -checkName "Local users" -finding "Ensure local users are all disabled or have their password rotated" -risk $csvR4 -relatedFile "Local-Users, Security-Policy.inf" -comment "Local users and cannot connect over the network: Deny access to this computer from the network " -status $csvUn
     addToCSV -category "Machine Hardening - Authentication" -checkID  "control_CredDel" -checkName "Credential delegation" -finding "Ensure Credential delegation is not configured or disabled (need admin permission to run)" -risk $csvR3 -relatedFile "GPResult" -comment "Administrative Templates > System > Credentials Delegation > Allow delegating default credentials + with NTLM" -status $csvUn
@@ -170,7 +169,7 @@ function addControlsToCSV {
     addToCSV -category "Machine Hardening - Operation system" -checkID  "control_SvcPer" -checkName "Service with overly permissive privileges" -finding "Ensure services are not running with overly permissive privileges" -risk $csvR3 -relatedFile "Services" -status $csvUn
     addToCSV -category "Machine Hardening - Operation system" -checkID  "control_MalProcSrvSoft" -checkName "Irrelevant/malicious processes/services/software" -finding "Ensure no irrelevant/malicious processes/services/software exists" -risk $csvR4 -relatedFile "Services, Process-list, Software, Netstat" -status $csvUn
     addToCSV -category "Machine Hardening - Audit" -checkID  "control_EventLog" -checkName "Event Log" -finding "Ensure logs are exported to SIEM" -risk $csvR2 -relatedFile "Audit-Policy" -status $csvUn
-    addToCSV -category "Machine Hardening - Network Access" -checkID  "control_HostFW" -checkName "Host firewall" -finding "Host firewall rules are configured to block/filter inbound (Host Isolation)" -risk $csvR4 -relatedFile "indows-Firewall, Windows-Firewall-Rules" -status $csvUn
+    addToCSV -category "Machine Hardening - Network Access" -checkID  "control_HostFW" -checkName "Host firewall" -finding "Host firewall rules are configured to block/filter inbound (Host Isolation)" -risk $csvR4 -relatedFile "Windows-Firewall, Windows-Firewall-Rules" -status $csvUn
     addToCSV -category "Machine Hardening - Operation system" -checkID  "control_Macros" -checkName "Macros are restricted" -finding "Ensure office macros are restricted" -risk $csvR4 -relatedFile "GPResult, currently WIP" -status $csvUn
 }
 
@@ -1633,12 +1632,17 @@ function checkWDigest {
 }
 
 # check for Net Session enumeration permissions
-# cannot be converted to a check function (will not be showed in the checks csv) - aka function need to be recreated 
 function checkNetSessionEnum {
     param (
         $name
     )
     $outputFile = getNameForFile -name $name -extension ".txt"
+    if($isDomainController){
+        $currentRisk = $csvR5
+    }
+    else{
+        $currentRisk = $csvR3
+    }
     writeToLog -str "running checkNetSessionEnum function"
     writeToScreen -str "Getting NetSession configuration..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str "============= NetSession Configuration ============="
@@ -1653,7 +1657,20 @@ function checkNetSessionEnum {
     $SessionRegValue = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity" -regName "SrvsvcSessionInfo"
     $SessionRegValue = $SessionRegValue.SrvsvcSessionInfo
     $SecurityDesc = New-Object -TypeName System.Security.AccessControl.CommonSecurityDescriptor -ArgumentList ($true,$false,$SessionRegValue,0)
-    writeToFile -file $outputFile -path $folderLocation -str ($SecurityDesc.DiscretionaryAcl | ForEach-Object {$_ | Add-Member -MemberType ScriptProperty -Name TranslatedSID -Value ({$this.SecurityIdentifier.Translate([System.Security.Principal.NTAccount]).Value}) -PassThru} | Out-String)
+    $SecurityDescList = $SecurityDesc.DiscretionaryAcl | ForEach-Object {$_ | Add-Member -MemberType ScriptProperty -Name TranslatedSID -Value ({$this.SecurityIdentifier.Translate([System.Security.Principal.NTAccount]).Value}) -PassThru}
+    writeToFile -file $outputFile -path $folderLocation -str ($SecurityDescList | Out-String)
+    $flag = $false
+    foreach ($item in $SecurityDescList){
+        if($item.TranslatedSID -like "*Authenticated Users*"){
+            $flag = $true
+        }
+    }
+    if($flag){
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - Enumeration" -checkName "NetSession enumeration permissions" -checkID "domain_NetSessionEnum" -status $csvOp -comment "Net session enumeration permissions are not hardened - Authenticated user can enumerate the SMB sessions on this computer" -comment "This is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound." -risk $currentRisk
+    }
+    else{
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - Enumeration" -checkName "NetSession enumeration permissions" -checkID "domain_NetSessionEnum" -status $csvOp -comment "Net session enumeration permissions are hardened - Authenticated user cannot enumerate the SMB sessions on this computer" -risk $currentRisk
+    }
     writeToFile -file $outputFile -path $folderLocation -str "--------- Raw Registry Value Check ---------" 
     writeToFile -file $outputFile -path $folderLocation -str "For comparison, below are the beginning of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:"
     writeToFile -file $outputFile -path $folderLocation -str "Default value for Windows 2019 and newer builds of Windows 10 (hardened): 1,0,4,128,160,0,0,0,172"
