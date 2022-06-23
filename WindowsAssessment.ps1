@@ -1,7 +1,7 @@
 param ([Switch]$EnableSensitiveInfoSearch = $false)
 # add the "EnableSensitiveInfoSearch" flag to search for sensitive data
 
-$Version = "1.37" # used for logging purposes
+$Version = "1.38" # used for logging purposes
 ###########################################################
 <# TODO: 
 - Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
@@ -163,7 +163,6 @@ function addControlsToCSV {
     addToCSV -category "Machine Hardening - Operation system" -checkID  "control_SvcAcc" -checkName "Service Accounts" -finding "Ensure service Accounts cannot login interactively (need admin permission to run)" -risk $csvR4 -relatedFile "Security-Policy inf" -comment "Deny log on locally/remote" -status $csvUn
     addToCSV -category "Machine Hardening - Authentication" -checkID  "control_LocalAndDomainPassPol" -checkName "Local and domain password policies" -finding "Ensure local and domain password policies are sufficient " -risk $csvR3 -relatedFile "AccountPolicy" -status $csvUn
     addToCSV -category "Machine Hardening - Operation system" -checkID  "control_SharePerm" -checkName "Overly permissive shares" -finding "No overly permissive shares exists " -risk $csvR3 -relatedFile "Shares" -status $csvUn
-    addToCSV -category "Machine Hardening - Authentication" -checkID  "control_ClearPass" -checkName "No clear-text passwords" -finding "No clear-text passwords are stored in files (if the EnableSensitiveInfoSearch was set)" -risk $csvR5 -relatedFile "Sensitive-Info" -status $csvUn
     addToCSV -category "Machine Hardening - Users" -checkID  "control_NumOfUsersAndGroups" -checkName "Reasonable number or users/groups" -finding "Reasonable number or users/groups have local admin permissions " -risk $csvR3 -relatedFile "Local-Users" -status $csvUn
     addToCSV -category "Machine Hardening - Users" -checkID  "control_UserRights" -checkName "User Rights Assignment" -finding "User Rights Assignment privileges don't allow privilege escalation by non-admins (need admin permission to run)" -risk $csvR4 -relatedFile "Security-Policy.inf" -comment "User Rights Assignment" -status $csvUn
     addToCSV -category "Machine Hardening - Operation system" -checkID  "control_SvcPer" -checkName "Service with overly permissive privileges" -finding "Ensure services are not running with overly permissive privileges" -risk $csvR3 -relatedFile "Services" -status $csvUn
@@ -1330,7 +1329,6 @@ function checkRDPSecurity {
 }
 
 # search for sensitive information (i.e. cleartext passwords) if the flag exists
-# check is not compatible with checks.csv format (Not a boolean result)
 function checkSensitiveInfo {
     param (
         $name
@@ -1350,19 +1348,33 @@ function checkSensitiveInfo {
             # find txt\ini\config\xml\vnc files with the word password in it, and dump the line
             # ignore the files outputted during the assessment...
             $includeFileTypes = @("*.txt","*.ini","*.config","*.xml","*vnc*")
-            writeToFile -file $outputFile -path $folderLocation -str (Get-ChildItem -Path $path -Include $includeFileTypes -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -notlike "*_$hostname.txt"} | Select-String -Pattern password | Out-String)
+            $filesWithPattern = Get-ChildItem -Path $path -Include $includeFileTypes -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -notlike "*_$hostname.txt"} | Select-String -Pattern password | Out-String
+            writeToFile -file $outputFile -path $folderLocation -str ($filesWithPattern)
             # find files with the name pass\cred\config\vnc\p12\pfx and dump the whole file, unless it is too big
             # ignore the files outputted during the assessment...
             $includeFilePatterns = @("*pass*","*cred*","*config","*vnc*","*p12","*pfx")
             $files = Get-ChildItem -Path $path -Include $includeFilePatterns -Attributes !System -File -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -notlike "*_$hostname.txt"}
+            $fileNames = @()
             foreach ($file in $files)
             {
                 writeToFile -file $outputFile -path $folderLocation -str "------------- $file -------------"
                 $fileSize = (Get-Item $file.FullName).Length
                 if ($fileSize -gt 300kb) {writeToFile -file $outputFile -path $folderLocation -str ("The file is too large to copy (" + [math]::Round($filesize/(1mb),2) + " MB).") }
-                else {writeToFile -file $outputFile -path $folderLocation -str (Get-Content $file.FullName)}
+                else {
+                    $fileNames += Get-Content $file.FullName
+                    writeToFile -file $outputFile -path $folderLocation -str (Get-Content $file.FullName)
+                }
+            }
+            if($null -ne $filesWithPattern -and $filesWithPattern -ne ""){
+               addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "No clear-text passwords" -checkID "machine_clearTextPass" -status $csvOp -finding "Clear text passwords where found in: $fileNames" -risk $csvR5 
+            }
+            else{
+               addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "No clear-text passwords" -checkID "machine_clearTextPass" -status $csvSt -finding "No clear text passwords where found" -risk $csvR5 
             }
         }
+    }
+    else{
+        addToCSV -relatedFile $outputFile -category "Machine Hardening - Authentication" -checkName "No clear-text passwords" -checkID "machine_clearTextPass" -status $csvUn -finding "Clear text passwords check has not been preformed" -risk $csvR5 
     }
     
 }
