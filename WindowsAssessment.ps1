@@ -1515,7 +1515,6 @@ function checkAntiVirusStatus {
     }
 }
 
-# partial support for csv export (NetBIOS final check need conversion)
 # check if LLMNR and NETBIOS-NS are enabled
 function checkLLMNRAndNetBIOS {
     param (
@@ -1581,6 +1580,49 @@ function checkLLMNRAndNetBIOS {
         writeToFile -file $outputFile -path $folderLocation -str "If NetbiosOptions is set to 2 for the main interface, NetBIOS Name Service is protected against poisoning attacks even though the NodeType is not set to P-node, and this is not a finding."
         $interfaces = getRegValue -HKLM $true -regPath "\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_*" -regName "NetbiosOptions"
         writeToFile -file $outputFile -path $folderLocation -str ($interfaces | Select-Object PSChildName,NetbiosOptions | Out-String)
+        $defaultFlag = $false
+        $defaultList = ""
+        $enforcedEnabled = $false
+        $enforcedEnabledList = ""
+        foreach ($item in ($interfaces | Select-Object PSChildName,NetbiosOptions)){
+            switch ($item.NetbiosOptions) {
+                0 {
+                    if($NodeType -ne 2){
+                        $defaultFlag = $true
+                        if($defaultList -eq ""){
+                        $defaultList += $item.PSChildName
+                        }
+                        else{
+                            $defaultList += ", " + $item.PSChildName 
+                        }
+                    }
+                }
+                1 {
+                    $enforcedEnabled = $true
+                    if($enforcedEnabledList -eq ""){
+                        $enforcedEnabledList += $item.PSChildName
+                    }
+                    else{
+                        $enforcedEnabledList += ", " + $item.PSChildName
+                    }
+                }
+                2 {
+                    #disabled
+                }
+            }
+        }
+        if($defaultFlag -and $enforcedEnabled){
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - Network" -checkName "NetBIOS interfaces configuration" -checkID "domain_NetBIOSInt" -status $csvOp -finding "Interfaces NetBIOS is using both vulnerable default setting and enforced enable " -comment "Default NetBIOS setting is applied on:$defaultList and NetBIOS is enabled by force on:$enforcedEnabledList" -risk $csvR4
+        }
+        elseif ($defaultFlag) {
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - Network" -checkName "NetBIOS interfaces configuration" -checkID "domain_NetBIOSInt" -status $csvOp -finding "Interfaces NetBIOS is using vulnerable default setting" -comment "Default NetBIOS setting is applied on:$defaultList" -risk $csvR4
+        }
+        elseif ($enforcedEnabled) {
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - Network" -checkName "NetBIOS interfaces configuration" -checkID "domain_NetBIOSInt" -status $csvOp -finding "Interfaces are enforced to enable NetBIOS" -comment "NetBIOS is enabled by force on:$enforcedEnabledList" -risk $csvR4
+        }
+        else{
+            addToCSV -relatedFile $outputFile -category "Domain Hardening - Network" -checkName "NetBIOS interfaces configuration" -checkID "domain_NetBIOSInt" -status $csvSt -finding "Interfaces NetBIOS is configured with secure default or disabled" -risk $csvR4
+        }
     }
     
 }
@@ -3017,10 +3059,8 @@ function checkPrevStorOfPassAndCred {
     }
 }
 
-#CredSSP Checks (in development)
-# https://thegeekpage.com/credssp-encryption-oracle-remediation-error/
+#CredSSP Checks
 # https://admx.help/?Category=Windows_10_2016&Policy=Microsoft.Policies.CredentialsSSP::AllowDefaultCredentials
-# Check the CredSSP registry key - Allow delegating default credentials (general and NTLM)
 function checkCredSSP {
     param (
         $name
