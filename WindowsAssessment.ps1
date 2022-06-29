@@ -489,7 +489,7 @@ function dataRunningProcess {
     writeToLog -str "running dataRunningProcess function"
     $outputFile = getNameForFile -name $name -extension ".csv"
     writeToScreen -str "Getting processes..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str  "Output of `"Get-Process`" PowerShell command:`r`n"
+    # writeToFile -file $outputFile -path $folderLocation -str  "Output of `"Get-Process`" PowerShell command:`r`n"
     try {
         Get-Process -IncludeUserName | Select-Object "ProcessName", "id", "company", "ProductVersion", "username", "cpu", "WorkingSet"  | export-csv -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
 
@@ -501,20 +501,21 @@ function dataRunningProcess {
         
 } 
 
-#adding CSV Support until hare (going down)
 # get services
 function dataServices {   
     param (
         $name
     )
     writeToLog -str "running dataServices function"
-    $outputFile = getNameForFile -name $name -extension ".txt"
+    $outputFile = getNameForFile -name $name -extension ".csv"
     writeToScreen -str "Getting services..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-WmiObject win32_service`" PowerShell command:`r`n"
-    writeToFile -file $outputFile -path $folderLocation -str (Get-WmiObject win32_service  | Sort-Object displayname | Format-Table -AutoSize DisplayName, Name, State, StartMode, StartName | Out-String -Width 180 | Out-String)
+    #writeToFile -file $outputFile -path $folderLocation -str "Output of `"Get-WmiObject win32_service`" PowerShell command:`r`n"
+    #writeToFile -file $outputFile -path $folderLocation -str (Get-WmiObject win32_service  | Sort-Object displayname | Format-Table -AutoSize DisplayName, Name, State, StartMode, StartName | Out-String -Width 180 | Out-String)
+    Get-WmiObject win32_service  | Sort-Object displayname | Select-Object "DisplayName", "Name", "State", "StartMode", "StartName" | export-csv -path  "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
 }
 
 # get installed software
+#adding CSV Support until hare (going down)
 function dataInstalledSoftware{
     param(
         $name
