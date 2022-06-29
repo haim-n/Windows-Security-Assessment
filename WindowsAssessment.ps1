@@ -190,7 +190,7 @@ function dataWhoAmI {
         $tmp = Test-ComputerSecureChannel -ErrorAction SilentlyContinue
     }
     else{
-        $tmp = $true
+        $tmp = $true 
     }
     if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain -and (!$tmp))
         {
@@ -481,28 +481,29 @@ function dataInstalledHotfixes {
     
 }
 
-#adding CSV Support until hare (going down)
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
 function dataRunningProcess {
     param (
         $name
     )
     writeToLog -str "running dataRunningProcess function"
-    $outputFile = getNameForFile -name $name -extension ".txt"
+    $outputFile = getNameForFile -name $name -extension ".csv"
     writeToScreen -str "Getting processes..." -ForegroundColor Yellow
     writeToFile -file $outputFile -path $folderLocation -str  "Output of `"Get-Process`" PowerShell command:`r`n"
     try {
-        writeToFile -file $outputFile -path $folderLocation -str (Get-Process -IncludeUserName | Format-Table -AutoSize ProcessName, id, company, ProductVersion, username, cpu, WorkingSet | Out-String -Width 180 | Out-String) 
+        Get-Process -IncludeUserName | Select-Object "ProcessName", "id", "company", "ProductVersion", "username", "cpu", "WorkingSet"  | export-csv -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
+
     }
     # run without IncludeUserName if the script doesn't have elevated permissions or for old powershell versions
-    catch {
-        writeToFile -file $outputFile -path $folderLocation -str (Get-Process | Format-Table -AutoSize ProcessName, id, company, ProductVersion, cpu, WorkingSet | Out-String -Width 180 | Out-String)
+    catch { 
+        Get-Process | Select-Object "ProcessName", "id", "company", "ProductVersion", "cpu", "WorkingSet"  | export-csv -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
     }
         
-}
+} 
 
+#adding CSV Support until hare (going down)
 # get services
-function dataServices {
+function dataServices {   
     param (
         $name
     )
