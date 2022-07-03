@@ -521,9 +521,11 @@ function dataInstalledSoftware{
         $name
     )
     writeToLog -str "running dataInstalledSoftware function"
-    $outputFile = getNameForFile -name $name -extension ".txt"
+    $outputFile = getNameForFile -name $name -extension ".csv"
     writeToScreen -str "Getting installed software..." -ForegroundColor Yellow
-    writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Sort-Object DisplayName | Out-String -Width 180 | Out-String)
+    #writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Sort-Object DisplayName | Out-String -Width 180 | Out-String)
+    Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Sort-Object DisplayName | export-csv -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
+
 }
 
 # get shared folders (Share permissions are missing for older PowerShell versions)
