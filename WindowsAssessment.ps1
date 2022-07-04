@@ -12,8 +12,6 @@ $Version = "1.38" # used for logging purposes
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
 - Add AMSI test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
-- Move lists (like processes or services) to CSV format instead of TXT - in progress
-- Consider separating the Domain-Hardening output files - checks aren't related
 - Ensure that the internet connectivity check (curl over HTTP/S) proxy aware
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
@@ -26,7 +24,6 @@ $Version = "1.38" # used for logging purposes
 - Check AV/Defender configuration also on non-Windows 10/11, but on Windows Server
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings (in progress)
-- Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network - Done, reg NC_ShowSharedAccessUI)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
 - Enhance internet connectivity checks (use proxy configuration) - need to check proxy settings on multiple types of deployments 
 - Check for Lock with screen saver after time-out? (\Control Panel\Personalization\) and "Interactive logon: Machine inactivity limit"? Relevant mostly for desktops
@@ -515,7 +512,6 @@ function dataServices {
 }
 
 # get installed software
-#adding CSV Support until hare (going down)
 function dataInstalledSoftware{
     param(
         $name
@@ -525,7 +521,6 @@ function dataInstalledSoftware{
     writeToScreen -str "Getting installed software..." -ForegroundColor Yellow
     #writeToFile -file $outputFile -path $folderLocation -str (Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Sort-Object DisplayName | Out-String -Width 180 | Out-String)
     Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Sort-Object DisplayName | export-csv -path "$folderLocation\$outputFile" -NoTypeInformation -ErrorAction SilentlyContinue
-
 }
 
 # get shared folders (Share permissions are missing for older PowerShell versions)
@@ -1724,10 +1719,10 @@ function checkNetSessionEnum {
         }
     }
     if($flag){
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - Enumeration" -checkName "NetSession enumeration permissions" -checkID "domain_NetSessionEnum" -status $csvOp -comment "Net session enumeration permissions are not hardened - Authenticated user can enumerate the SMB sessions on this computer" -comment "This is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound." -risk $currentRisk
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - Enumeration" -checkName "NetSession enumeration permissions" -checkID "domain_NetSessionEnum" -status $csvOp -finding "Net session enumeration permissions are not hardened - Authenticated user can enumerate the SMB sessions on this computer" -comment "This is a major vulnerability mainly on Domain Controllers, enabling valuable reconnaissance, as leveraged by BloodHound." -risk $currentRisk
     }
     else{
-        addToCSV -relatedFile $outputFile -category "Domain Hardening - Enumeration" -checkName "NetSession enumeration permissions" -checkID "domain_NetSessionEnum" -status $csvOp -comment "Net session enumeration permissions are hardened - Authenticated user cannot enumerate the SMB sessions on this computer" -risk $currentRisk
+        addToCSV -relatedFile $outputFile -category "Domain Hardening - Enumeration" -checkName "NetSession enumeration permissions" -checkID "domain_NetSessionEnum" -status $csvOp -finding "Net session enumeration permissions are hardened - Authenticated user cannot enumerate the SMB sessions on this computer" -risk $currentRisk
     }
     writeToFile -file $outputFile -path $folderLocation -str "--------- Raw Registry Value Check ---------" 
     writeToFile -file $outputFile -path $folderLocation -str "For comparison, below are the beginning of example values of the SrvsvcSessionInfo registry key, which holds the ACL for NetSessionEnum:"
