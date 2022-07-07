@@ -4,14 +4,18 @@ param ([Switch]$EnableSensitiveInfoSearch = $false)
 $Version = "1.37" # used for logging purposes
 ###########################################################
 <# TODO: 
-- Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
-- Check for bugs in the SMB1 check - fixed need to check
-- Debug the FirewallProducts check
-- Debug the RDP check on multiple OS versions - There is a problem in this check (writes RDP disabled when in fact it is open)
+- Bug fixes:
+-- Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
+-- Check for bugs in the SMB1 check - fixed need to check
+-- Fix SAM enum CSV output
+-- Fix PSv2 CSV output - seems that only "based on reg value" is presented, which isn't accurate
+-- Change the "running" to "Running" in log file, change "log_COMPNAME" to "Log_COMPNAME", prevent the transcription messages from being written to screen
+-- Debug the FirewallProducts check
+-- Debug the RDP check on multiple OS versions - There is a problem in this check (writes RDP disabled when in fact it is open)
+- Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Add check into NetSessionEnum to see whether running on a DC
 - Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW - https://vuls.cert.org/confluence/display/Wiki/2022/02/24/Kerberos+relaying+with+krbrelayx+and+mitm6
 - Add AMSI test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
-- Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Move lists (like processes or services) to CSV format instead of TXT - in progress
 - Consider separating the Domain-Hardening output files - checks aren't related
 - Ensure that the internet connectivity check (curl over HTTP/S) proxy aware
@@ -38,7 +42,6 @@ $Version = "1.37" # used for logging purposes
 - Add more ideas from Microsoft's Attack Surface Analyzer: https://github.com/Microsoft/AttackSurfaceAnalyzer
 - Add more settings from hardening docs
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
-- Change the "running" to "Running" in log file, change "log_COMPNAME" to "Log_COMPNAME", prevent the transcription messages from being written to screen
 
 ##########################################################
 @Haim Nachmias @Nital Ruzin
