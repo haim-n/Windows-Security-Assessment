@@ -38,6 +38,7 @@ $Version = "1.37" # used for logging purposes
 - Add more ideas from Microsoft's Attack Surface Analyzer: https://github.com/Microsoft/AttackSurfaceAnalyzer
 - Add more settings from hardening docs
 - Run the script from remote location to a list of servers - psexec, remote ps, etc.
+- Change the "running" to "Running" in log file, change "log_COMPNAME" to "Log_COMPNAME", prevent the transcription messages from being written to screen
 
 ##########################################################
 @Haim Nachmias @Nital Ruzin
