@@ -9,4 +9,4 @@ Performs only non-intrusive passive checks.
 
 Supports all Windows versions with PowerShell (2003/XP and above).
 
-In use by Sygnia Consulting: https://www.sygnia.co/
+**In use by Sygnia Consulting: https://www.sygnia.co/**
