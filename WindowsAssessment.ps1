@@ -29,6 +29,7 @@ $Version = "1.37" # used for logging purposes
 - Consider adding AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Add check for mDNS? https://f20.be/blog/mdns
 - Check AV/Defender configuration also on non-Windows 10/11, but on Windows Server
+- Consider removing the recommendation of running as local admin; ensure that most functionality is preserved without it
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings (in progress)
 - Check if ability to enable mobile hotspot is blocked (GPO Prohibit use of Internet Connection Sharing on your DNS domain network - Done, reg NC_ShowSharedAccessUI)
