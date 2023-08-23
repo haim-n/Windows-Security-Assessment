@@ -4,16 +4,22 @@ param ([Switch]$EnableSensitiveInfoSearch = $false)
 $Version = "1.38" # used for logging purposes
 ###########################################################
 <# TODO: 
-- Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
-- Check for bugs in the SMB1 check - fixed need to check
-- Debug the FirewallProducts check
-- Debug the RDP check on multiple OS versions - There is a problem in this check (writes RDP disabled when in fact it is open)
+- Bug fixes:
+-- Debug antivirus check (got "registry access is not allowed" exception on Windows 10 without admin elevation)
+-- Check for bugs in the SMB1 check - fixed need to check
+-- Fix SAM enum CSV output
+-- Fix PSv2 CSV output - seems that only "based on reg value" is presented, which isn't accurate
+-- Change the "running" to "Running" in log file, change "log_COMPNAME" to "Log_COMPNAME", prevent the transcription messages from being written to screen
+-- Debug the FirewallProducts check
+-- Debug the RDP check on multiple OS versions - There is a problem in this check (writes RDP disabled when in fact it is open)
+- Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Add check into NetSessionEnum to see whether running on a DC
-- Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW
+- Determine if computer is protected against IPv6 based DNS spoofing (mitm6) - IPv6 disabled (Get-NetAdapterBinding -ComponentID ms_tcpip6) or inbound ICMPv6 / outbound DHCPv6 blocked by FW - https://vuls.cert.org/confluence/display/Wiki/2022/02/24/Kerberos+relaying+with+krbrelayx+and+mitm6
 - Add AMSI test (find something that is not EICAR based) - https://www.blackhillsinfosec.com/is-this-thing-on
 - Update PSv2 checks - speak with Nir/Liran, use this: https://robwillis.info/2020/01/disabling-powershell-v2-with-group-policy/, https://github.com/robwillisinfo/Disable-PSv2/blob/master/Disable-PSv2.ps1
 - Ensure that the internet connectivity check (curl over HTTP/S) proxy aware
 - Determine more stuff that are found only in the Security-Policy/GPResult files:
+-- Determine LDAP Signing and Channel Binding (https://4sysops.com/archives/secure-domain-controllers-with-ldap-channel-binding-and-ldap-signing)
 -- Determine if local users can connect over the network ("Deny access to this computer from the network")
 -- Determine LDAP Signing and Channel Binding (https://4sysops.com/archives/secure-domain-controllers-with-ldap-channel-binding-and-ldap-signing)
 -- Determine if the local administrators group is configured as a restricted group with fixed members (based on Security-Policy inf file)
@@ -22,6 +28,7 @@ $Version = "1.38" # used for logging purposes
 - Consider adding AD permissions checks from here: https://github.com/haim-n/ADDomainDaclAnalysis
 - Add check for mDNS? https://f20.be/blog/mdns
 - Check AV/Defender configuration also on non-Windows 10/11, but on Windows Server
+- Consider removing the recommendation of running as local admin; ensure that most functionality is preserved without it
 - When the script is running by an admin but without UAC, pop an UAC confirmation (https://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946)
 - Check Macro and DDE (OLE) settings (in progress)
 - Look for additional checks from windows_hardening.cmd script / Seatbelt
@@ -3512,14 +3519,17 @@ checkWinUpdateConfig -name "Windows-updates"
 # get processes (new powershell version and run-as admin are required for IncludeUserName)
 dataRunningProcess -name "Process-list"
 
-# check for unquoted path vulnerability in services running on the machine
-checkUnquotedSePath -name "Services"
-
 # get services
 dataServices -name "Services"
 
+# check for unquoted path vulnerability in services running on the machine
+checkUnquotedSePath -name "Services"
+
 # get installed software
 dataInstalledSoftware -name "Software"
+
+# get shared folders (share permissions are missing for older PowerShell versions)
+dataSharedFolders -name "Shares"
 
 # get local and domain account policy
 dataAccountPolicy -name "AccountPolicy"
@@ -3587,16 +3597,7 @@ checkSafeModeAcc4NonAdmin -name "Machine-Hardening"
 # Check if there is hardening preventing user from connecting to multiple networks simultaneous 
 checkSimulEhtrAndWifi -name "Internet-Connectivity"
 
-# get shared folders (Share permissions are missing for older PowerShell versions)
-dataSharedFolders -name "Shares"
-
-# search for sensitive information (i.e. cleartext passwords) if the flag exists
-checkSensitiveInfo -name "Sensitive-Info"
-
-# get various system info (can take a few seconds)
-dataSystemInfo -name "Systeminfo"
-
-#Get Kerberos secuirty settings
+# Get Kerberos security settings
 checkKerberos -name "Domain-authentication"
 
 # Check if credentials and password are stored in LSASS for network authentication.
@@ -3604,6 +3605,12 @@ checkPrevStorOfPassAndCred  -name "Domain-authentication"
 
 # Check CredSSP configuration
 checkCredSSP -name "CredSSP"
+
+# search for sensitive information (i.e., cleartext passwords) if the flag exists
+checkSensitiveInfo -name "Sensitive-Info"
+
+# get various system info (can take a few seconds)
+dataSystemInfo -name "Systeminfo"
 
 # Add Controls list to CSV file
 addControlsToCSV
